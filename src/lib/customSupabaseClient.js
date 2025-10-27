@@ -1,6 +1,12 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://dopgudlgtnzgdrlildlm.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRvcGd1ZGxndG56Z2RybGlsZGxtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1MjUyNTAsImV4cCI6MjA3NTEwMTI1MH0.viiin1a_fPe1E_tktsVSU6DO5ujX-2KOhkj0yKWDfaQ';
+// Lê automaticamente as variáveis do .env.local (local) ou do painel da Vercel (produção)
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Verifica se as variáveis existem (ajuda a debugar se faltar no Vercel)
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error("❌ Variáveis do Supabase não encontradas. Verifique o .env.local ou o painel da Vercel.")
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
