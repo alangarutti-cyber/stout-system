@@ -1,133 +1,155 @@
-import React from 'react';
+import React, { forwardRef } from "react";
 
-const PrintableClosing = React.forwardRef(({ companyName, closingDate, user, data }, ref) => {
+const PrintableClosing = forwardRef(({ companyName, closingDate, user, data }, ref) => {
   const {
-    addedMachines,
-    addedOtherPayments,
-    expenses,
-    withdrawals,
-    systemValues,
-    valorAbertura,
-    suprimentos,
-    observacoes
-  } = data;
+    addedMachines = [],
+    expenses = [],
+    withdrawals = [],
+    systemValues = {},
+    valorAbertura = 0,
+    suprimentos = 0,
+    valorIfoodBruto = 0,
+    valorPixCnpj = 0,
+    valorDinheiroCaixa = 0,
+    observacoes = "",
+  } = data || {};
 
-  const totalConferido = 
-    addedMachines.reduce((acc, am) => acc + am.payments.reduce((sum, p) => sum + p.value, 0), 0) +
-    addedOtherPayments.reduce((acc, op) => acc + op.payments.reduce((sum, p) => sum + p.value, 0), 0);
+  const formatCurrency = (value) =>
+    `R$ ${parseFloat(value || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
 
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.value, 0);
-  const totalWithdrawals = withdrawals.reduce((sum, w) => sum + w.value, 0);
-  const totalSaidas = totalExpenses + totalWithdrawals;
-
-  const saldoFinal = (valorAbertura + totalConferido + suprimentos) - totalSaidas;
-  
-  const totalSystem = Object.values(systemValues).reduce((sum, val) => sum + parseFloat(val), 0);
-  const totalDifference = totalSystem - totalConferido;
-
-  const formatCurrency = (value) => `R$ ${value.toFixed(2).replace('.', ',')}`;
-  const formatDate = (dateString) => {
-    const date = new Date(dateString + 'T00:00:00');
-    return date.toLocaleDateString('pt-BR');
-  };
-
-  const SectionTitle = ({ children }) => (
-    <h2 className="text-xl font-bold border-b-2 border-gray-800 pb-2 mb-4 mt-6">{children}</h2>
+  const totalMaquinas = addedMachines.reduce(
+    (acc, m) => acc + (m.payments || []).reduce((s, p) => s + p.value, 0),
+    0
   );
 
-  const Table = ({ children }) => (
-    <table className="w-full text-sm">
-      <tbody>{children}</tbody>
-    </table>
-  );
+  const totalDespesas = expenses.reduce((acc, e) => acc + (e.value || 0), 0);
+  const totalSaidas = withdrawals.reduce((acc, w) => acc + (w.value || 0), 0);
+  const totalConferido =
+    totalMaquinas + valorIfoodBruto + valorPixCnpj + valorDinheiroCaixa;
 
-  const Row = ({ label, value, isBold = false }) => (
-    <tr className={isBold ? 'font-bold' : ''}>
-      <td className="py-1 pr-4">{label}</td>
-      <td className="py-1 text-right">{value}</td>
-    </tr>
-  );
+  const totalSistema = Object.values(systemValues || {})
+    .filter((v) => typeof v === "number")
+    .reduce((s, val) => s + val, 0);
+
+  const diferenca = totalConferido - totalSistema;
 
   return (
-    <div ref={ref} className="bg-white text-black p-8">
-      <header className="text-center mb-8">
-        <h1 className="text-3xl font-bold uppercase">{companyName}</h1>
-        <p className="text-lg">Relatório de Fechamento de Caixa</p>
-        <p className="text-sm text-gray-600">
-          Data: {formatDate(closingDate)} às {new Date().toLocaleTimeString('pt-BR')}
-        </p>
-      </header>
+    <div ref={ref} className="p-6 text-gray-800 text-sm">
+      <h1 className="text-2xl font-bold mb-1 text-center">
+        Fechamento de Caixa - {companyName}
+      </h1>
+      <p className="text-center mb-4">
+        Data: {new Date(closingDate).toLocaleDateString("pt-BR")} <br />
+        Usuário: {user?.name || user?.email}
+      </p>
 
-      <main>
-        <SectionTitle>Entradas</SectionTitle>
-        <Table>
-          <Row label="Valor de Abertura" value={formatCurrency(valorAbertura)} />
-          <Row label="Suprimentos" value={formatCurrency(suprimentos)} />
-        </Table>
+      <div className="mb-4">
+        <h2 className="font-bold border-b pb-1 mb-2">Resumo de Caixa</h2>
+        <table className="w-full text-left border-collapse">
+          <tbody>
+            <tr>
+              <td className="py-1">💰 Abertura de Caixa</td>
+              <td>{formatCurrency(valorAbertura)}</td>
+            </tr>
+            <tr>
+              <td className="py-1">📥 Suprimentos</td>
+              <td>{formatCurrency(suprimentos)}</td>
+            </tr>
+            <tr>
+              <td className="py-1">💵 Dinheiro em Caixa</td>
+              <td>{formatCurrency(valorDinheiroCaixa)}</td>
+            </tr>
+            <tr>
+              <td className="py-1">🧾 iFood Online</td>
+              <td>{formatCurrency(valorIfoodBruto)}</td>
+            </tr>
+            <tr>
+              <td className="py-1">💳 Pix CNPJ</td>
+              <td>{formatCurrency(valorPixCnpj)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
-        {addedMachines.map(({ machine, payments }) => (
-          <div key={`print-machine-${machine.id}`} className="mt-4">
-            <h3 className="font-semibold text-md mb-2">Máquina: {machine.serial_number} ({machine.operator.name})</h3>
-            <Table>
-              {payments.map(p => (
-                <Row key={`print-payment-${p.id}`} label={p.name} value={formatCurrency(p.value)} />
+      <div className="mb-4">
+        <h2 className="font-bold border-b pb-1 mb-2">Máquinas</h2>
+        {addedMachines.length > 0 ? (
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b font-semibold">
+                <th className="py-1">Máquina</th>
+                <th className="py-1">Valor Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {addedMachines.map((m) => (
+                <tr key={m.machine?.id}>
+                  <td className="py-1">{m.machine?.name || "Sem nome"}</td>
+                  <td className="py-1">
+                    {formatCurrency(
+                      (m.payments || []).reduce((s, p) => s + p.value, 0)
+                    )}
+                  </td>
+                </tr>
               ))}
-            </Table>
-          </div>
-        ))}
-
-        {addedOtherPayments.map(({ operator, payments }) => (
-          <div key={`print-other-${operator.id}`} className="mt-4">
-            <h3 className="font-semibold text-md mb-2">Outros Pagamentos: {operator.name}</h3>
-            <Table>
-              {payments.map(p => (
-                <Row key={`print-other-payment-${p.id}`} label={p.name} value={formatCurrency(p.value)} />
-              ))}
-            </Table>
-          </div>
-        ))}
-        <Table>
-            <Row label="Total de Vendas Conferido" value={formatCurrency(totalConferido)} isBold={true} />
-        </Table>
-
-        <SectionTitle>Saídas</SectionTitle>
-        <Table>
-          {expenses.map(e => (
-            <Row key={`print-expense-${e.id}`} label={e.description} value={formatCurrency(e.value)} />
-          ))}
-          {withdrawals.map(w => (
-            <Row key={`print-withdrawal-${w.id}`} label={`Retirada ${w.employee.name}`} value={formatCurrency(w.value)} />
-          ))}
-          <Row label="Total de Saídas" value={formatCurrency(totalSaidas)} isBold={true} />
-        </Table>
-
-        <SectionTitle>Resumo Final</SectionTitle>
-        <Table>
-          <Row label="Total Conferido (Vendas)" value={formatCurrency(totalConferido)} />
-          <Row label="Total do Sistema" value={formatCurrency(totalSystem)} />
-          <Row label="Diferença" value={formatCurrency(totalDifference)} isBold={true} />
-          <tr className="text-lg font-bold bg-gray-100">
-            <td className="py-2 pr-4">SALDO FINAL EM CAIXA</td>
-            <td className="py-2 text-right">{formatCurrency(saldoFinal)}</td>
-          </tr>
-        </Table>
-
-        {observacoes && (
-          <>
-            <SectionTitle>Observações</SectionTitle>
-            <p className="text-sm p-4 border rounded-lg bg-gray-50">{observacoes}</p>
-          </>
+            </tbody>
+          </table>
+        ) : (
+          <p className="text-gray-500">Nenhuma máquina adicionada.</p>
         )}
-      </main>
+      </div>
 
-      <footer className="mt-20 text-center">
-        <div className="inline-block">
-          <div className="border-t-2 border-gray-800 w-64 mx-auto pt-2">
-            <p className="text-sm">Assinatura do Responsável</p>
-            <p className="text-xs text-gray-600">({user?.name || 'N/A'})</p>
-          </div>
+      <div className="mb-4">
+        <h2 className="font-bold border-b pb-1 mb-2">Despesas / Saídas</h2>
+        <table className="w-full text-left border-collapse">
+          <tbody>
+            <tr>
+              <td className="py-1">Despesas</td>
+              <td>{formatCurrency(totalDespesas)}</td>
+            </tr>
+            <tr>
+              <td className="py-1">Retiradas</td>
+              <td>{formatCurrency(totalSaidas)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mb-4">
+        <h2 className="font-bold border-b pb-1 mb-2">Totais e Diferenças</h2>
+        <table className="w-full text-left border-collapse">
+          <tbody>
+            <tr>
+              <td className="py-1 font-semibold">🧾 Total Conferido</td>
+              <td className="font-semibold">{formatCurrency(totalConferido)}</td>
+            </tr>
+            <tr>
+              <td className="py-1">💻 Total Sistema</td>
+              <td>{formatCurrency(totalSistema)}</td>
+            </tr>
+            <tr>
+              <td className="py-1">📊 Diferença</td>
+              <td className={`${diferenca < 0 ? "text-red-600" : "text-green-700"}`}>
+                {formatCurrency(diferenca)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {observacoes && (
+        <div className="mt-6">
+          <h2 className="font-bold border-b pb-1 mb-2">Observações</h2>
+          <p className="whitespace-pre-line">{observacoes}</p>
         </div>
-      </footer>
+      )}
+
+      <p className="text-center text-xs text-gray-400 mt-6">
+        Impresso automaticamente pelo Stout System - {new Date().toLocaleString("pt-BR")}
+      </p>
     </div>
   );
 });
