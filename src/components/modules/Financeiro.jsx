@@ -1,575 +1,701 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { Plus, Download, Save, Edit, Undo2, Trash2, CheckCircle, Search, FileText } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/use-toast';
-import { supabase } from '@/lib/customSupabaseClient';
+// src/components/financeiro/Financeiro.jsx
+import React, { useState, useEffect, useCallback } from "react";
+import { Plus, Download, Upload, Save, Search } from "lucide-react";
+import * as XLSX from "xlsx";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
+import { supabase } from "@/lib/customSupabaseClient";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
-import { useUser } from '@/contexts/UserContext';
-import { useNavigate } from 'react-router-dom';
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useUser } from "@/contexts/UserContext";
+
+/** Helpers */
+const toBRL = (v) =>
+  `R$ ${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+
+const dateBR = (d) => (d ? new Date(d).toLocaleDateString("pt-BR") : "—");
+
+/** Exibir fornecedor no padrão pedido */
+const formatSupplierDisplay = (s) => {
+  if (!s) return "N/A";
+  const tipo = (s.tipo || (s.cnpj ? "PJ" : "PF")).toUpperCase();
+  if (tipo === "PJ") {
+    const nome = s.razao_social || s.nome_fantasia || "";
+    const id = s.cnpj ? ` (${s.cnpj})` : "";
+    return `${nome}${id}`.trim() || "N/A";
+  }
+  const nome = s.nome_fantasia || "";
+  const id = s.cpf ? ` (${s.cpf})` : "";
+  return `${nome}${id}`.trim() || "N/A";
+};
 
 const Financeiro = () => {
   const { user, companies, userCompanyAccess } = useUser();
-  const navigate = useNavigate();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState('pagar');
-  const [selectedCompany, setSelectedCompany] = useState('all');
+
+  /** filtros e estados */
+  const [activeTab, setActiveTab] = useState("pagar");
+  const [selectedCompany, setSelectedCompany] = useState("all");
+  const [selectedSupplier, setSelectedSupplier] = useState("all");
+  const [selectedCliente, setSelectedCliente] = useState("all");
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  /** dados */
+  const [suppliers, setSuppliers] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [dreGroups, setDreGroups] = useState([]);
   const [contasPagar, setContasPagar] = useState([]);
   const [contasReceber, setContasReceber] = useState([]);
-  const [dreGroups, setDreGroups] = useState([]);
-  const [bankAccounts, setBankAccounts] = useState([]);
-  const [clientes, setClientes] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
-  const [paymentMethods, setPaymentMethods] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  /** modal nova conta */
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
-  const [contaToProcess, setContaToProcess] = useState(null);
-  const [contaToDelete, setContaToDelete] = useState(null);
-  const [editingConta, setEditingConta] = useState(null);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCliente, setSelectedCliente] = useState('all');
-  const [selectedContas, setSelectedContas] = useState([]);
   const [newConta, setNewConta] = useState({
-    description: '',
-    value: '',
-    due_date: '',
-    company_id: '',
+    description: "",
+    value: "",
+    due_date: "",
+    company_id: "",
     installments: 1,
+    interval_days: 30,
     is_recurring: false,
-    dre_group_id: '',
-    cliente_id: '',
-    supplier_id: '',
-    payment_method_id: '',
-    observacoes: '',
+    dre_group_id: "",
+    cliente_id: "",
+    supplier_id: "",
+    payment_method_id: "",
+    observacoes: "",
   });
 
+  /** modal preview import */
+  const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
+  const [importPreview, setImportPreview] = useState([]);
+
+  /** empresas permitidas */
   const allowedCompanies = React.useMemo(() => {
     if (!user || !companies || !userCompanyAccess) return [];
     if (user.is_admin) return companies;
-    const allowedCompanyIds = userCompanyAccess
-      .filter(access => access.user_id === user.id)
-      .map(access => access.company_id);
-    return companies.filter(c => allowedCompanyIds.includes(c.id));
+    const ids = userCompanyAccess
+      .filter((a) => a.user_id === user.id)
+      .map((a) => a.company_id);
+    return companies.filter((c) => ids.includes(c.id));
   }, [user, companies, userCompanyAccess]);
-  
-  const allowedCompanyIds = allowedCompanies.map(c => c.id);
+  const allowedCompanyIds = allowedCompanies.map((c) => c.id);
 
+  /** carregar dados */
   const fetchInitialData = useCallback(async () => {
     setLoading(true);
-    setSelectedContas([]);
-    
-    const fetchContas = async (tableName) => {
-      let selectString = '*, companies(name), dre_groups(name)';
-      if (tableName === 'contas_pagar') {
-        selectString += ', supplier:suppliers(name), bank_account:bank_accounts!contas_pagar_bank_account_id_fkey(bank_name, account_number)';
-      } else { // contas_receber
-        selectString += ', cliente:clientes(name, id), bank_account:bank_accounts!contas_receber_conta_id_fkey(bank_name, account_number)';
-      }
 
-      let query = supabase.from(tableName).select(selectString);
-      
-      if (selectedCompany !== 'all') {
-        query = query.eq('company_id', selectedCompany);
-      } else {
-        query = query.in('company_id', allowedCompanyIds);
-      }
-      if (startDate) query = query.gte('due_date', startDate);
-      if (endDate) query = query.lte('due_date', endDate);
-      if (searchTerm) query = query.ilike('description', `%${searchTerm}%`);
-      if (tableName === 'contas_receber' && selectedCliente !== 'all') {
-        query = query.eq('cliente_id', selectedCliente);
-      }
-      
-      const { data, error } = await query.order('due_date', { ascending: true });
-      if (error) {
-        console.error(`Erro ao buscar ${tableName}:`, error);
-        toast({ title: `Erro ao buscar ${tableName}`, description: error.message, variant: "destructive" });
-      }
-      return data || [];
-    };
-
-    const fetchRelationData = async (tableName) => {
-        const { data, error } = await supabase.from(tableName).select('*');
-        if (error) toast({ title: `Erro ao buscar ${tableName}`, variant: "destructive" });
-        return data || [];
-    };
-    
-    const fetchBankAccounts = async () => {
-      let query = supabase.from('bank_accounts').select('*, companies:bank_account_company_access!inner(company_id)');
-      if (selectedCompany !== 'all') query = query.eq('companies.company_id', selectedCompany);
-      else query = query.in('companies.company_id', allowedCompanyIds);
-      const { data, error } = await query;
-      if (error) {
-          toast({ title: "Erro ao buscar contas bancárias", variant: "destructive", description: error.message });
-          return [];
-      }
-      return data.reduce((acc, current) => {
-          if (!acc.find(item => item.id === current.id)) acc.push(current);
-          return acc;
-      }, []);
-    };
-    
-    const [pagarData, receberData, dreData, banksData, clientesData, suppliersData, paymentMethodsData] = await Promise.all([
-        fetchContas('contas_pagar'), 
-        fetchContas('contas_receber'),
-        fetchRelationData('dre_groups'),
-        fetchBankAccounts(),
-        fetchRelationData('clientes'),
-        fetchRelationData('suppliers'),
-        fetchRelationData('payment_methods')
+    // relacionamentos já trazem todos os campos do fornecedor/cliente para formatação
+    const [
+      suppliersRes,
+      clientesRes,
+      payMethodsRes,
+      dreRes,
+      pagarRes,
+      receberRes,
+    ] = await Promise.all([
+      supabase.from("suppliers").select("*").order("codigo", { ascending: true }),
+      supabase.from("clientes").select("*"),
+      supabase.from("payment_methods").select("*"),
+      supabase.from("dre_groups").select("*"),
+      supabase
+        .from("contas_pagar")
+        .select("*, supplier:suppliers(*), companies(name)")
+        .order("due_date", { ascending: true }),
+      supabase
+        .from("contas_receber")
+        .select("*, cliente:clientes(*), companies(name)")
+        .order("due_date", { ascending: true }),
     ]);
-    
-    const today = new Date().toISOString().split('T')[0];
-    
-    const processContas = (data) => data.map(c => ({
-      ...c,
-      status: c.status === 'Pendente' && c.due_date < today ? 'Vencida' : c.status,
-      company: c.companies?.name || 'Empresa não encontrada'
-    }));
 
-    setContasPagar(processContas(pagarData));
-    setContasReceber(processContas(receberData));
-    setDreGroups(dreData.filter(d => !d.is_calculated));
-    setBankAccounts(banksData);
-    setClientes(clientesData);
-    setSuppliers(suppliersData);
-    setPaymentMethods(paymentMethodsData);
-
+    setSuppliers(suppliersRes.data || []);
+    setClientes(clientesRes.data || []);
+    setPaymentMethods(payMethodsRes.data || []);
+    setDreGroups((dreRes.data || []).filter((d) => !d.is_calculated));
+    setContasPagar(pagarRes.data || []);
+    setContasReceber(receberRes.data || []);
     setLoading(false);
-  }, [selectedCompany, toast, JSON.stringify(allowedCompanyIds), startDate, endDate, searchTerm, selectedCliente]);
+  }, []);
 
   useEffect(() => {
-    if (allowedCompanyIds.length > 0) {
-      fetchInitialData();
-    } else if (!loading) {
-      setLoading(false);
-    }
-  }, [fetchInitialData, allowedCompanyIds.length]);
+    fetchInitialData();
+  }, [fetchInitialData]);
 
-  useEffect(() => {
-    setSelectedContas([]);
-  }, [activeTab]);
+  /** EXPORTAR — Fornecedores no padrão Excel */
+  const handleExportSuppliers = async () => {
+    const { data, error } = await supabase
+      .from("suppliers")
+      .select("*")
+      .order("codigo", { ascending: true });
 
-  const handleInputChange = (e) => {
-    const { id, value, type, checked } = e.target;
-    const stateToUpdate = editingConta ? setEditingConta : setNewConta;
-    stateToUpdate(prev => ({ ...prev, [id]: type === 'checkbox' ? checked : value }));
-  };
-
-  const handleSaveConta = async () => {
-    const contaData = editingConta || newConta;
-    if (!contaData.description || !contaData.value || !contaData.due_date || !contaData.company_id) {
-      toast({ title: "Campos obrigatórios", variant: "destructive" });
+    if (error) {
+      toast({ title: "Erro ao exportar", description: error.message, variant: "destructive" });
       return;
     }
 
-    const tableName = activeTab === 'pagar' ? 'contas_pagar' : 'contas_receber';
-    
-    const dataToUpsert = {
-        description: contaData.description,
-        value: parseFloat(contaData.value),
-        due_date: contaData.due_date,
-        company_id: contaData.company_id,
-        dre_group_id: contaData.dre_group_id || null,
-        observacoes: contaData.observacoes || null,
-    };
+    const rows = (data || []).map((s) => ({
+      "Código": s.codigo ?? "",
+      "Tipo": (s.tipo || (s.cnpj ? "PJ" : "PF"))?.toUpperCase(),
+      "Nome/Nome fantasia": s.nome_fantasia ?? "",
+      "CPF": s.cpf ?? "",
+      "RG": s.rg ?? "",
+      "Data de nascimento": s.data_nascimento ? new Date(s.data_nascimento) : "",
+      "Razão social": s.razao_social ?? "",
+      "CNPJ": s.cnpj ?? "",
+      "I.E.": s.ie ?? "",
+      "I.M.": s.im ?? "",
+      "Ativo": (s.ativo ?? true) ? "Sim" : "Não",
+      "Telefone": s.telefone ?? "",
+      "Celular": s.celular ?? "",
+      "E-mail": s.email ?? "",
+      "Cadastrado em": s.cadastrado_em ? new Date(s.cadastrado_em) : "",
+    }));
 
-    if (tableName === 'contas_pagar') {
-        dataToUpsert.supplier_id = contaData.supplier_id || null;
-    } else {
-        dataToUpsert.cliente_id = contaData.cliente_id || null;
-    }
-
-    if (editingConta) {
-        const { error } = await supabase.from(tableName).update(dataToUpsert).eq('id', editingConta.id);
-        if (error) toast({ title: "Erro ao atualizar conta", variant: "destructive" });
-        else { toast({ title: "Conta atualizada!", variant: "success" }); closeDialog(); fetchInitialData(); }
-    } else {
-        const selectedPaymentMethod = paymentMethods.find(pm => pm.id == newConta.payment_method_id);
-        const installments = parseInt(newConta.installments, 10) || 1;
-        const valuePerInstallment = parseFloat(newConta.value) / installments;
-        const initialDate = new Date(newConta.due_date + 'T00:00:00');
-
-        const contasToInsert = Array.from({ length: installments }, (_, i) => {
-            const dueDate = new Date(initialDate);
-            if(selectedPaymentMethod?.prazo_dias) {
-              dueDate.setDate(dueDate.getDate() + selectedPaymentMethod.prazo_dias);
-            }
-            dueDate.setMonth(dueDate.getMonth() + i);
-
-            const installmentData = {
-                ...dataToUpsert,
-                description: `${newConta.description} ${installments > 1 ? `(${i + 1}/${installments})` : ''}`,
-                value: valuePerInstallment,
-                due_date: dueDate.toISOString().split('T')[0],
-                is_recurring: newConta.is_recurring,
-                installments: installments,
-                status: 'Pendente',
-                origem: 'Manual',
-            };
-
-            if (tableName === 'contas_receber') {
-                installmentData.conta_id = selectedPaymentMethod?.conta_id || null;
-            } else { // contas_pagar
-                installmentData.bank_account_id = selectedPaymentMethod?.conta_id || null;
-            }
-            
-            return installmentData;
-        });
-
-        const { error: insertError } = await supabase.from(tableName).insert(contasToInsert).select();
-        if (insertError) {
-          toast({ title: `Erro ao adicionar conta`, variant: "destructive", description: insertError.message });
-          return;
-        }
-
-        toast({ title: `Conta(s) adicionada(s)!`, variant: "success" });
-        closeDialog(); 
-        fetchInitialData();
-    }
-  };
-
-  const handleStatusChange = async (conta, newStatus, bankAccountId) => {
-    const tableName = activeTab === 'pagar' ? 'contas_pagar' : 'contas_receber';
-    const isConfirming = newStatus === 'Paga' || newStatus === 'Recebida';
-    const isUndoing = newStatus === 'Pendente';
-    const fieldToUpdate = tableName === 'contas_pagar' ? 'payment_date' : 'data_recebimento';
-    const accountFieldToUpdate = tableName === 'contas_pagar' ? 'bank_account_id' : 'conta_id';
-
-    const updateData = {
-        status: newStatus,
-        [fieldToUpdate]: isConfirming ? new Date().toISOString().split('T')[0] : null,
-        [accountFieldToUpdate]: isConfirming ? (bankAccountId || null) : null
-    };
-
-    const { error } = await supabase.from(tableName).update(updateData).eq('id', conta.id);
-
-    if (error) {
-        toast({ title: "Erro ao atualizar status", description: error.message, variant: "destructive" });
-        return;
-    }
-
-    if (isConfirming) {
-        if (bankAccountId) {
-            const { data: bankAccount, error: accError } = await supabase.from('bank_accounts').select('current_balance').eq('id', bankAccountId).single();
-            if (accError) {
-              toast({ title: "Erro ao buscar conta bancária", description: accError.message, variant: "destructive" });
-            } else {
-              const transactionType = activeTab === 'pagar' ? 'outflow' : 'inflow';
-              const newBalance = transactionType === 'inflow' ? bankAccount.current_balance + conta.value : bankAccount.current_balance - conta.value;
-
-              await supabase.from('bank_transactions').insert({
-                  account_id: bankAccountId,
-                  type: transactionType,
-                  value: conta.value,
-                  description: `Ref: ${conta.description}`,
-                  transaction_date: new Date().toISOString().split('T')[0],
-                  user_id: user.id,
-                  [tableName === 'contas_pagar' ? 'conta_pagar_id' : 'conta_receber_id']: conta.id
-              });
-              await supabase.from('bank_accounts').update({ current_balance: newBalance }).eq('id', bankAccountId);
-            }
-        }
-        toast({ title: "Status atualizado!", variant: "success" });
-    } else if (isUndoing) {
-        const originalAccountId = conta.bank_account_id || conta.conta_id;
-        if (originalAccountId) {
-            const { data: bankAccount, error: accError } = await supabase.from('bank_accounts').select('current_balance').eq('id', originalAccountId).single();
-            if (accError) {
-              toast({ title: "Erro ao buscar conta bancária para estorno", description: accError.message, variant: "destructive" });
-            } else {
-              const transactionType = activeTab === 'pagar' ? 'outflow' : 'inflow';
-              const newBalance = transactionType === 'inflow' ? bankAccount.current_balance - conta.value : bankAccount.current_balance + conta.value;
-              
-              await supabase.from('bank_accounts').update({ current_balance: newBalance }).eq('id', originalAccountId);
-              
-              await supabase.from('bank_transactions').delete().match({ [tableName === 'contas_pagar' ? 'conta_pagar_id' : 'conta_receber_id']: conta.id });
-            }
-        }
-        toast({ title: "Operação desfeita com sucesso!", variant: "success" });
-    }
-
-    fetchInitialData();
-    setIsPaymentDialogOpen(false);
-    setContaToProcess(null);
-  };
-
-  const handleDeleteConta = async () => {
-    if (!contaToDelete) return;
-    const tableName = activeTab === 'pagar' ? 'contas_pagar' : 'contas_receber';
-    const { error } = await supabase.from(tableName).delete().eq('id', contaToDelete.id);
-    if (error) toast({ title: "Erro ao excluir conta", variant: "destructive" });
-    else { toast({ title: "Conta excluída!", variant: "success" }); fetchInitialData(); }
-    setIsDeleteDialogOpen(false);
-    setContaToDelete(null);
-  };
-
-  const handleSelectConta = (contaId, checked) => {
-    if (checked) {
-      setSelectedContas(prev => [...prev, contaId]);
-    } else {
-      setSelectedContas(prev => prev.filter(id => id !== contaId));
-    }
-  };
-
-  const handleGenerateSingleCobranca = async () => {
-    if (selectedContas.length === 0) {
-        toast({ title: "Nenhuma conta selecionada", variant: 'destructive' });
-        return;
-    }
-
-    const contasParaCobranca = contasReceber.filter(c => selectedContas.includes(c.id));
-    const firstConta = contasParaCobranca[0];
-    const clienteId = firstConta.cliente_id;
-    const companyId = firstConta.company_id;
-
-    if (!contasParaCobranca.every(c => c.cliente_id === clienteId && c.company_id === companyId)) {
-        toast({ title: "Seleção Inválida", description: "Todas as contas selecionadas devem ser do mesmo cliente e da mesma empresa.", variant: 'destructive' });
-        return;
-    }
-
-    const totalValue = contasParaCobranca.reduce((sum, c) => sum + c.value, 0);
-    const lastDueDate = contasParaCobranca.reduce((latest, c) => c.due_date > latest ? c.due_date : latest, firstConta.due_date);
-    
-    const { data: cobranca, error } = await supabase
-        .from('cobrancas')
-        .insert({
-            cliente_id: clienteId,
-            company_id: companyId,
-            valor: totalValue,
-            data_emissao: new Date().toISOString().split('T')[0],
-            data_vencimento: lastDueDate,
-            status: 'pendente',
-            observacoes: `Cobrança unificada de ${contasParaCobranca.length} conta(s). IDs: ${selectedContas.join(', ')}`,
-            responsavel_id: user.id,
-            contas_receber_id: firstConta.id, // Link to the first one for reference
-        })
-        .select()
-        .single();
-
-    if (error) {
-        toast({ title: "Erro ao gerar cobrança", description: error.message, variant: 'destructive' });
-    } else {
-        toast({ title: "Cobrança unificada gerada!", description: "Você será redirecionado para a tela de cobranças.", variant: 'success' });
-        setSelectedContas([]);
-        navigate('/cobrancas');
-    }
-};
-
-
-  const openEditDialog = (conta) => { setEditingConta({ ...conta, due_date: conta.due_date.split('T')[0] }); setIsDialogOpen(true); };
-  const openDeleteDialog = (conta) => { setContaToDelete(conta); setIsDeleteDialogOpen(true); };
-  const openNewDialog = () => { setEditingConta(null); setNewConta({ description: '', value: '', due_date: '', company_id: '', installments: 1, is_recurring: false, dre_group_id: '', cliente_id: '', supplier_id: '', payment_method_id: '', observacoes: '' }); setIsDialogOpen(true); };
-  const openPaymentDialog = (conta) => { setContaToProcess(conta); setIsPaymentDialogOpen(true); };
-  const closeDialog = () => { setIsDialogOpen(false); setEditingConta(null); };
-  
-  const renderTableRows = (contas, type) => {
-    if (contas.length === 0) {
-      return (
-        <tr>
-          <td colSpan="8" className="text-center p-10 text-gray-500">Nenhuma conta encontrada.</td>
-        </tr>
-      );
-    }
-    return contas.map(conta => {
-      const isOverdue = conta.status === 'Vencida';
-      const isPaid = conta.status === 'Recebida' || conta.status === 'Paga';
-      const entityName = type === 'pagar' ? conta.supplier?.name : conta.cliente?.name;
-
-      return (
-        <tr key={conta.id} className={`border-b ${selectedContas.includes(conta.id) ? 'bg-blue-50' : (isPaid ? 'bg-green-50' : isOverdue ? 'bg-red-50' : 'bg-white')}`}>
-           {type === 'receber' && (
-             <td className="p-3 text-center">
-               <Checkbox
-                 checked={selectedContas.includes(conta.id)}
-                 onCheckedChange={(checked) => handleSelectConta(conta.id, checked)}
-                 disabled={conta.status !== 'Pendente' && conta.status !== 'Vencida'}
-               />
-             </td>
-           )}
-          <td className="p-3">
-            <p className="font-semibold">{conta.description}</p>
-            <p className="text-xs text-gray-500">{conta.company}</p>
-          </td>
-          <td className="p-3 text-left">{entityName || 'N/A'}</td>
-          <td className="p-3 text-right font-mono">R$ {parseFloat(conta.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-          <td className={`p-3 text-center font-medium ${isOverdue ? 'text-red-600' : ''}`}>{new Date(conta.due_date + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-          <td className="p-3 text-center">
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${isOverdue ? 'bg-red-100 text-red-700' : isPaid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-              {conta.status}
-            </span>
-          </td>
-          <td className="p-3 text-center">{conta.payment_date || conta.data_recebimento ? new Date((conta.payment_date || conta.data_recebimento) + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
-          <td className="p-3">
-            <div className="flex justify-center gap-1">
-              {isPaid ? (
-                <Button variant="outline" size="sm" onClick={() => handleStatusChange(conta, 'Pendente')}><Undo2 className="w-4 h-4 mr-1" /> Desfazer</Button>
-              ) : (
-                <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white" onClick={() => openPaymentDialog(conta)}><CheckCircle className="w-4 h-4 mr-1" /> Confirmar</Button>
-              )}
-              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => openEditDialog(conta)}><Edit className="h-4 w-4" /></Button>
-              <Button variant="ghost" size="icon" className="h-9 w-9 text-red-500 hover:text-red-700" onClick={() => openDeleteDialog(conta)}><Trash2 className="h-4 w-4" /></Button>
-            </div>
-          </td>
-        </tr>
-      );
+    const ws = XLSX.utils.json_to_sheet(rows, {
+      header: [
+        "Código","Tipo","Nome/Nome fantasia","CPF","RG","Data de nascimento",
+        "Razão social","CNPJ","I.E.","I.M.","Ativo","Telefone","Celular","E-mail","Cadastrado em",
+      ],
     });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Fornecedores");
+    XLSX.writeFile(wb, "fornecedores.xlsx");
+    toast({ title: "Exportação concluída", description: "fornecedores.xlsx gerado no padrão." });
   };
 
-  const contaData = editingConta || newConta;
+  /** IMPORTAR — Fornecedores no padrão + preview */
+  const handleImportSuppliers = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+    const preview = rows.map((r) => ({
+      codigo: r["Código"] || null,
+      tipo: (r["Tipo"] || "").toString().trim().toUpperCase(), // PF/PJ
+      nome_fantasia: (r["Nome/Nome fantasia"] || "").toString().trim(),
+      cpf: (r["CPF"] || "").toString().trim(),
+      rg: (r["RG"] || "").toString().trim(),
+      data_nascimento: r["Data de nascimento"] ? new Date(r["Data de nascimento"]) : null,
+      razao_social: (r["Razão social"] || "").toString().trim(),
+      cnpj: (r["CNPJ"] || "").toString().trim(),
+      ie: (r["I.E."] || "").toString().trim(),
+      im: (r["I.M."] || "").toString().trim(),
+      ativo: String(r["Ativo"] || "Sim").toLowerCase().startsWith("s"),
+      telefone: (r["Telefone"] || "").toString().trim(),
+      celular: (r["Celular"] || "").toString().trim(),
+      email: (r["E-mail"] || "").toString().trim(),
+      cadastrado_em: r["Cadastrado em"] ? new Date(r["Cadastrado em"]) : null,
+    }));
+
+    setImportPreview(preview);
+    setIsPreviewDialogOpen(true);
+  };
+
+  const confirmImport = async () => {
+    if (!importPreview.length) {
+      toast({ title: "Nada para importar", variant: "destructive" });
+      return;
+    }
+    // defina a coluna de conflito de acordo com sua unique no banco
+    const onConflict = "codigo"; // troque para "cnpj" se preferir
+    const { error } = await supabase.from("suppliers").upsert(importPreview, { onConflict });
+    if (error) {
+      toast({ title: "Erro ao importar", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Importação concluída", description: `${importPreview.length} fornecedores processados.` });
+      setIsPreviewDialogOpen(false);
+      setImportPreview([]);
+      fetchInitialData();
+    }
+  };
+
+  /** EXPORTAR — Contas a Pagar (separado) */
+  const handleExportContasPagar = () => {
+    if (!contasPagar.length) {
+      toast({ title: "Nenhuma conta a pagar encontrada", variant: "destructive" });
+      return;
+    }
+    const companyName =
+      selectedCompany === "all"
+        ? "TodasEmpresas"
+        : allowedCompanies.find((c) => c.id === selectedCompany)?.name || "Empresa";
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const year = now.getFullYear();
+
+    const filtered = contasPagar
+      .filter((c) => selectedCompany === "all" || c.company_id === selectedCompany)
+      .filter((c) => selectedSupplier === "all" || c.supplier_id === selectedSupplier)
+      .filter((c) => selectedPaymentMethod === "all" || c.payment_method_id === selectedPaymentMethod)
+      .filter((c) => (startDate ? c.due_date >= startDate : true))
+      .filter((c) => (endDate ? c.due_date <= endDate : true))
+      .filter((c) => (searchTerm ? (c.description || "").toLowerCase().includes(searchTerm.toLowerCase()) : true))
+      .map((c) => ({
+        "Descrição": c.description,
+        "Fornecedor": formatSupplierDisplay(c.supplier),
+        "Empresa": c.companies?.name || "",
+        "Valor (R$)": Number(c.value || 0),
+        "Vencimento": dateBR(c.due_date),
+        "Status": c.status,
+        "Data Pagamento": dateBR(c.payment_date),
+      }));
+
+    const ws = XLSX.utils.json_to_sheet(filtered);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Contas a Pagar");
+    XLSX.writeFile(wb, `contas_a_pagar_${companyName}_${month}_${year}.xlsx`);
+    toast({ title: "Exportação concluída", description: "Planilha de Contas a Pagar gerada." });
+  };
+
+  /** EXPORTAR — Contas a Receber (separado) */
+  const handleExportContasReceber = () => {
+    if (!contasReceber.length) {
+      toast({ title: "Nenhuma conta a receber encontrada", variant: "destructive" });
+      return;
+    }
+    const companyName =
+      selectedCompany === "all"
+        ? "TodasEmpresas"
+        : allowedCompanies.find((c) => c.id === selectedCompany)?.name || "Empresa";
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const year = now.getFullYear();
+
+    const filtered = contasReceber
+      .filter((c) => selectedCompany === "all" || c.company_id === selectedCompany)
+      .filter((c) => selectedCliente === "all" || c.cliente_id === selectedCliente)
+      .filter((c) => selectedPaymentMethod === "all" || c.payment_method_id === selectedPaymentMethod)
+      .filter((c) => (startDate ? c.due_date >= startDate : true))
+      .filter((c) => (endDate ? c.due_date <= endDate : true))
+      .filter((c) => (searchTerm ? (c.description || "").toLowerCase().includes(searchTerm.toLowerCase()) : true))
+      .map((c) => ({
+        "Descrição": c.description,
+        "Cliente": c.cliente?.name || "N/A",
+        "Empresa": c.companies?.name || "",
+        "Valor (R$)": Number(c.value || 0),
+        "Vencimento": dateBR(c.due_date),
+        "Status": c.status,
+        "Data Recebimento": dateBR(c.data_recebimento),
+      }));
+
+    const ws = XLSX.utils.json_to_sheet(filtered);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Contas a Receber");
+    XLSX.writeFile(wb, `contas_a_receber_${companyName}_${month}_${year}.xlsx`);
+    toast({ title: "Exportação concluída", description: "Planilha de Contas a Receber gerada." });
+  };
+
+  /** SALVAR Nova Conta (parcelas + intervalo em dias) */
+  const handleSaveConta = async () => {
+    if (!newConta.description || !newConta.value || !newConta.due_date || !newConta.company_id) {
+      toast({ title: "Preencha os campos obrigatórios", variant: "destructive" });
+      return;
+    }
+    const tableName = activeTab === "pagar" ? "contas_pagar" : "contas_receber";
+    const installments = parseInt(newConta.installments, 10) || 1;
+    const intervalDays = parseInt(newConta.interval_days || 30, 10);
+    const totalValue = parseFloat(newConta.value);
+    const valuePerInstallment = totalValue / installments;
+    const initialDate = new Date(newConta.due_date + "T00:00:00");
+
+    const contasToInsert = Array.from({ length: installments }, (_, i) => {
+      const dueDate = new Date(initialDate);
+      dueDate.setDate(dueDate.getDate() + intervalDays * i);
+      return {
+        ...newConta,
+        value: valuePerInstallment,
+        due_date: dueDate.toISOString().split("T")[0],
+        status: "Pendente",
+        origem: "Manual",
+      };
+    });
+
+    const { error } = await supabase.from(tableName).insert(contasToInsert);
+    if (error) {
+      toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Conta(s) adicionada(s)!", variant: "success" });
+      setIsDialogOpen(false);
+      setNewConta((p) => ({ ...p, description: "", value: "", due_date: "" }));
+      fetchInitialData();
+    }
+  };
+
+  /** filtros locais (apenas para a tabela — export usa arrays + filtros novamente) */
+  const filteredPagar = contasPagar
+    .filter((c) => selectedCompany === "all" || c.company_id === selectedCompany)
+    .filter((c) => selectedSupplier === "all" || c.supplier_id === selectedSupplier)
+    .filter((c) => selectedPaymentMethod === "all" || c.payment_method_id === selectedPaymentMethod)
+    .filter((c) => (startDate ? c.due_date >= startDate : true))
+    .filter((c) => (endDate ? c.due_date <= endDate : true))
+    .filter((c) => (searchTerm ? (c.description || "").toLowerCase().includes(searchTerm.toLowerCase()) : true));
+
+  const filteredReceber = contasReceber
+    .filter((c) => selectedCompany === "all" || c.company_id === selectedCompany)
+    .filter((c) => selectedCliente === "all" || c.cliente_id === selectedCliente)
+    .filter((c) => selectedPaymentMethod === "all" || c.payment_method_id === selectedPaymentMethod)
+    .filter((c) => (startDate ? c.due_date >= startDate : true))
+    .filter((c) => (endDate ? c.due_date <= endDate : true))
+    .filter((c) => (searchTerm ? (c.description || "").toLowerCase().includes(searchTerm.toLowerCase()) : true));
 
   return (
     <div className="space-y-6">
+      {/* CABEÇALHO + AÇÕES */}
       <div className="bg-card p-4 rounded-xl shadow-md border">
         <h1 className="text-2xl font-bold mb-4">Gestão Financeira</h1>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
           <div>
-            <Label htmlFor="company-filter">Empresa</Label>
-            <select id="company-filter" value={selectedCompany} onChange={(e) => setSelectedCompany(e.target.value)} className="w-full px-4 py-2 rounded-lg border bg-background h-10" disabled={loading}>
-              <option value="all">Todas as Empresas</option>
-              {allowedCompanies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            <Label>Empresa</Label>
+            <select
+              className="w-full p-2 border rounded"
+              value={selectedCompany}
+              onChange={(e) => setSelectedCompany(e.target.value)}
+            >
+              <option value="all">Todas</option>
+              {allowedCompanies.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
             </select>
           </div>
-          {activeTab === 'receber' && (
+
+          {activeTab === "pagar" && (
             <div>
-              <Label htmlFor="client-filter">Cliente</Label>
-              <select id="client-filter" value={selectedCliente} onChange={(e) => setSelectedCliente(e.target.value)} className="w-full px-4 py-2 rounded-lg border bg-background h-10" disabled={loading}>
-                <option value="all">Todos os Clientes</option>
-                {clientes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <Label>Fornecedor</Label>
+              <select
+                className="w-full p-2 border rounded"
+                value={selectedSupplier}
+                onChange={(e) => setSelectedSupplier(e.target.value)}
+              >
+                <option value="all">Todos</option>
+                {suppliers.map((s) => (
+                  <option key={s.id || s.codigo} value={s.id || s.codigo}>
+                    {formatSupplierDisplay(s)}
+                  </option>
+                ))}
               </select>
             </div>
           )}
-          <div>
-            <Label htmlFor="start-date">Vencimento (Início)</Label>
-            <Input id="start-date" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} disabled={loading}/>
-          </div>
-          <div>
-            <Label htmlFor="end-date">Vencimento (Fim)</Label>
-            <Input id="end-date" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} disabled={loading}/>
-          </div>
-          <div className={activeTab === 'receber' ? 'lg:col-span-1' : 'lg:col-span-2'}>
-             <Label htmlFor="search-term">Buscar por Descrição</Label>
-             <div className="flex items-end gap-2">
-                 <Input id="search-term" type="text" placeholder="Ex: Compra de insumos" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} disabled={loading}/>
-                 <Button onClick={fetchInitialData} className="h-10" disabled={loading}><Search className="w-4 h-4" /></Button>
-             </div>
-          </div>
-        </div>
-         <div className="flex justify-end gap-2 mt-4">
-             <Button onClick={openNewDialog} className="h-10" variant="outline"><Plus className="mr-2 h-4 w-4" /> Nova Conta</Button>
-             <Button variant="outline" size="icon" className="h-10 w-10"><Download className="w-4 h-4" /></Button>
-         </div>
-      </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={closeDialog}>
-        <DialogContent><DialogHeader><DialogTitle>{editingConta ? 'Editar' : 'Nova'} Conta</DialogTitle></DialogHeader>
-          <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
-            <Input id="description" placeholder="Descrição" value={contaData.description} onChange={handleInputChange} />
-            <div className="grid grid-cols-2 gap-4">
-              <Input id="value" type="number" placeholder="Valor Total (R$)" value={contaData.value} onChange={handleInputChange} />
-              <Input id="due_date" type="date" placeholder="1º Vencimento" value={contaData.due_date} onChange={handleInputChange} />
+          {activeTab === "receber" && (
+            <div>
+              <Label>Cliente</Label>
+              <select
+                className="w-full p-2 border rounded"
+                value={selectedCliente}
+                onChange={(e) => setSelectedCliente(e.target.value)}
+              >
+                <option value="all">Todos</option>
+                {clientes.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
             </div>
-            <select id="company_id" value={contaData.company_id} onChange={handleInputChange} className="w-full p-2 border rounded"><option value="" disabled>Selecione uma empresa</option>{allowedCompanies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-            {activeTab === 'receber' ? (
-                <select id="cliente_id" value={contaData.cliente_id || ''} onChange={handleInputChange} className="w-full p-2 border rounded"><option value="">Nenhum Cliente</option>{clientes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-            ) : (
-                <select id="supplier_id" value={contaData.supplier_id || ''} onChange={handleInputChange} className="w-full p-2 border rounded"><option value="">Nenhum Fornecedor</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
-            )}
-            {!editingConta && <select id="payment_method_id" value={contaData.payment_method_id || ''} onChange={handleInputChange} className="w-full p-2 border rounded"><option value="">Forma de Pagamento</option>{paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}</select>}
-            <select id="dre_group_id" value={contaData.dre_group_id || ''} onChange={handleInputChange} className="w-full p-2 border rounded"><option value="">Nenhum Grupo DRE</option>{dreGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
-            {!editingConta && <div className="grid grid-cols-2 gap-4"><Input id="installments" type="number" min="1" placeholder="Nº de Parcelas" value={newConta.installments} onChange={handleInputChange} /><div className="flex items-center space-x-2"><Checkbox id="is_recurring" checked={newConta.is_recurring} onCheckedChange={(c) => setNewConta(p => ({...p, is_recurring: c}))} /><Label htmlFor="is_recurring">É recorrente?</Label></div></div>}
-            <Input id="observacoes" placeholder="Observações" value={contaData.observacoes || ''} onChange={handleInputChange} />
-          </div>
-          <DialogFooter><Button onClick={handleSaveConta}><Save className="mr-2" /> Salvar</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          )}
 
-      <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Confirmar {activeTab === 'pagar' ? 'Pagamento' : 'Recebimento'}</DialogTitle></DialogHeader>
-          <div className="py-4 space-y-4">
-            <p>Selecione a conta bancária para esta transação. O saldo será atualizado automaticamente.</p>
-            <select id="bank_account_id" className="w-full p-2 border rounded" onChange={e => setContaToProcess(p => ({...p, bank_account_id: e.target.value}))}>
-              <option value="">Não vincular / Caixa</option>
-              {bankAccounts.map(b => <option key={b.id} value={b.id}>{b.bank_name} / {b.account_number}</option>)}
+          <div>
+            <Label>Forma de Pagamento</Label>
+            <select
+              className="w-full p-2 border rounded"
+              value={selectedPaymentMethod}
+              onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+            >
+              <option value="all">Todas</option>
+              {paymentMethods.map((pm) => (
+                <option key={pm.id} value={pm.id}>{pm.name}</option>
+              ))}
             </select>
           </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setIsPaymentDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={() => handleStatusChange(contaToProcess, activeTab === 'pagar' ? 'Paga' : 'Recebida', contaToProcess.bank_account_id)}><CheckCircle className="mr-2" /> Confirmar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Você tem certeza?</AlertDialogTitle><AlertDialogDescription>Esta ação não pode ser desfeita e excluirá permanentemente a conta "{contaToDelete?.description}".</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleDeleteConta}>Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
-      </AlertDialog>
-      
-      <div className="bg-card rounded-xl shadow-md border overflow-hidden">
-        <div className="p-2 bg-muted/50 flex justify-between items-center">
-          <div className="flex flex-wrap gap-2">
-            <button onClick={() => setActiveTab('pagar')} className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-all text-sm ${activeTab === 'pagar' ? 'bg-white shadow' : 'text-muted-foreground hover:bg-white/50'}`}>Contas a Pagar</button>
-            <button onClick={() => setActiveTab('receber')} className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-all text-sm ${activeTab === 'receber' ? 'bg-white shadow' : 'text-muted-foreground hover:bg-white/50'}`}>Contas a Receber</button>
+          <div>
+            <Label>Venc. (Início)</Label>
+            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </div>
-          {activeTab === 'receber' && selectedContas.length > 0 && (
-             <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="pr-4">
-                <Button onClick={handleGenerateSingleCobranca}>
-                   <FileText className="h-4 w-4 mr-2" />
-                   Gerar Cobrança Única ({selectedContas.length})
-                </Button>
-             </motion.div>
-          )}
+          <div>
+            <Label>Venc. (Fim)</Label>
+            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap justify-end gap-2 mt-4">
+          <Button onClick={fetchInitialData}><Search className="w-4 h-4" /></Button>
+
+          <Button onClick={handleExportSuppliers} variant="outline">
+            <Download className="mr-2 h-4 w-4" /> Exportar Fornecedores
+          </Button>
+
+          <label className="cursor-pointer">
+            <input type="file" accept=".xlsx" onChange={handleImportSuppliers} className="hidden" />
+            <Button variant="outline">
+              <Upload className="mr-2 h-4 w-4" /> Importar Fornecedores
+            </Button>
+          </label>
+
+          <Button onClick={handleExportContasPagar} variant="outline" className="bg-green-50 hover:bg-green-100">
+            <Download className="mr-2 h-4 w-4 text-green-700" /> Exportar Contas a Pagar
+          </Button>
+
+          <Button onClick={handleExportContasReceber} variant="outline" className="bg-blue-50 hover:bg-blue-100">
+            <Download className="mr-2 h-4 w-4 text-blue-700" /> Exportar Contas a Receber
+          </Button>
+
+          <Button onClick={() => setIsDialogOpen(true)} variant="outline">
+            <Plus className="mr-2 h-4 w-4" /> Nova Conta
+          </Button>
+        </div>
+      </div>
+
+      {/* TABS + TABELA */}
+      <div className="bg-card rounded-xl shadow-md border overflow-hidden">
+        <div className="p-2 bg-muted/50 flex gap-2">
+          <button
+            onClick={() => setActiveTab("pagar")}
+            className={`px-4 py-2 rounded-lg font-semibold text-sm ${
+              activeTab === "pagar" ? "bg-white shadow" : "text-muted-foreground hover:bg-white/50"
+            }`}
+          >
+            Contas a Pagar
+          </button>
+        <button
+            onClick={() => setActiveTab("receber")}
+            className={`px-4 py-2 rounded-lg font-semibold text-sm ${
+              activeTab === "receber" ? "bg-white shadow" : "text-muted-foreground hover:bg-white/50"
+            }`}
+          >
+            Contas a Receber
+          </button>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-100">
-                <tr>
-                  {activeTab === 'receber' && <th className="p-3 w-12"></th>}
-                  <th className="p-3 text-left font-semibold text-gray-600">Descrição</th>
-                  <th className="p-3 text-left font-semibold text-gray-600">Cliente/Fornecedor</th>
-                  <th className="p-3 text-right font-semibold text-gray-600">Valor</th>
-                  <th className="p-3 text-center font-semibold text-gray-600">Vencimento</th>
-                  <th className="p-3 text-center font-semibold text-gray-600">Status</th>
-                  <th className="p-3 text-center font-semibold text-gray-600">Data Pgto/Rec.</th>
-                  <th className="p-3 text-center font-semibold text-gray-600">Ações</th>
-                </tr>
+              <tr>
+                <th className="p-3 text-left">Descrição</th>
+                <th className="p-3 text-left">Cliente/Fornecedor</th>
+                <th className="p-3 text-right">Valor</th>
+                <th className="p-3 text-center">Vencimento</th>
+                <th className="p-3 text-center">Status</th>
+                <th className="p-3 text-center">Data Pgto/Rec.</th>
+              </tr>
             </thead>
             <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan="8" className="text-center p-10">Carregando...</td>
+              {loading ? (
+                <tr><td colSpan="6" className="text-center p-6">Carregando...</td></tr>
+              ) : activeTab === "pagar" ? (
+                filteredPagar.map((c) => (
+                  <tr key={c.id} className="border-b">
+                    <td className="p-3 font-semibold">{c.description}</td>
+                    <td className="p-3">{formatSupplierDisplay(c.supplier)}</td>
+                    <td className="p-3 text-right">{toBRL(c.value)}</td>
+                    <td className="p-3 text-center">{dateBR(c.due_date)}</td>
+                    <td className="p-3 text-center">{c.status}</td>
+                    <td className="p-3 text-center">{dateBR(c.payment_date)}</td>
                   </tr>
-                ) : (
-                  activeTab === 'pagar' ? renderTableRows(contasPagar, 'pagar') : renderTableRows(contasReceber, 'receber')
-                )}
+                ))
+              ) : (
+                filteredReceber.map((c) => (
+                  <tr key={c.id} className="border-b">
+                    <td className="p-3 font-semibold">{c.description}</td>
+                    <td className="p-3">{c.cliente?.name || "N/A"}</td>
+                    <td className="p-3 text-right">{toBRL(c.value)}</td>
+                    <td className="p-3 text-center">{dateBR(c.due_date)}</td>
+                    <td className="p-3 text-center">{c.status}</td>
+                    <td className="p-3 text-center">{dateBR(c.data_recebimento)}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* MODAL: NOVA CONTA */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Nova Conta</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2 max-h-[70vh] overflow-y-auto">
+            <Input
+              id="description"
+              placeholder="Descrição"
+              value={newConta.description}
+              onChange={(e) => setNewConta((p) => ({ ...p, description: e.target.value }))}
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                id="value"
+                type="number"
+                placeholder="Valor Total (R$)"
+                value={newConta.value}
+                onChange={(e) => setNewConta((p) => ({ ...p, value: e.target.value }))}
+              />
+              <Input
+                id="due_date"
+                type="date"
+                value={newConta.due_date}
+                onChange={(e) => setNewConta((p) => ({ ...p, due_date: e.target.value }))}
+              />
+            </div>
+
+            <select
+              id="company_id"
+              className="w-full p-2 border rounded"
+              value={newConta.company_id}
+              onChange={(e) => setNewConta((p) => ({ ...p, company_id: e.target.value }))}
+            >
+              <option value="">Selecione uma empresa</option>
+              {allowedCompanies.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+
+            {activeTab === "receber" ? (
+              <select
+                id="cliente_id"
+                className="w-full p-2 border rounded"
+                value={newConta.cliente_id || ""}
+                onChange={(e) => setNewConta((p) => ({ ...p, cliente_id: e.target.value }))}
+              >
+                <option value="">Nenhum Cliente</option>
+                {clientes.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            ) : (
+              <select
+                id="supplier_id"
+                className="w-full p-2 border rounded"
+                value={newConta.supplier_id || ""}
+                onChange={(e) => setNewConta((p) => ({ ...p, supplier_id: e.target.value }))}
+              >
+                <option value="">Nenhum Fornecedor</option>
+                {suppliers.map((s) => (
+                  <option key={s.id || s.codigo} value={s.id || s.codigo}>
+                    {formatSupplierDisplay(s)}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <select
+              id="payment_method_id"
+              className="w-full p-2 border rounded"
+              value={newConta.payment_method_id || ""}
+              onChange={(e) => setNewConta((p) => ({ ...p, payment_method_id: e.target.value }))}
+            >
+              <option value="">Forma de Pagamento</option>
+              {paymentMethods.map((pm) => (
+                <option key={pm.id} value={pm.id}>{pm.name}</option>
+              ))}
+            </select>
+
+            <div className="grid grid-cols-3 gap-4">
+              <Input
+                id="installments"
+                type="number"
+                min="1"
+                placeholder="Nº Parcelas"
+                value={newConta.installments}
+                onChange={(e) => setNewConta((p) => ({ ...p, installments: e.target.value }))}
+              />
+              <select
+                id="interval_days"
+                className="w-full p-2 border rounded"
+                value={newConta.interval_days}
+                onChange={(e) => setNewConta((p) => ({ ...p, interval_days: e.target.value }))}
+              >
+                <option value="7">A cada 7 dias</option>
+                <option value="14">A cada 14 dias</option>
+                <option value="21">A cada 21 dias</option>
+                <option value="30">A cada 30 dias</option>
+                <option value="custom">Personalizado</option>
+              </select>
+              {String(newConta.interval_days) === "custom" && (
+                <Input
+                  type="number"
+                  min="1"
+                  placeholder="Dias personalizados"
+                  onChange={(e) => setNewConta((p) => ({ ...p, interval_days: e.target.value }))}
+                />
+              )}
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="is_recurring"
+                checked={!!newConta.is_recurring}
+                onCheckedChange={(c) => setNewConta((p) => ({ ...p, is_recurring: c }))}
+              />
+              <Label htmlFor="is_recurring">É recorrente?</Label>
+            </div>
+
+            <Input
+              id="observacoes"
+              placeholder="Observações"
+              value={newConta.observacoes || ""}
+              onChange={(e) => setNewConta((p) => ({ ...p, observacoes: e.target.value }))}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button onClick={handleSaveConta}>
+              <Save className="mr-2 h-4 w-4" /> Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: PRÉ-VISUALIZAÇÃO IMPORT */}
+      <Dialog open={isPreviewDialogOpen} onOpenChange={setIsPreviewDialogOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader><DialogTitle>Pré-visualização de Fornecedores</DialogTitle></DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto border rounded-md">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="p-2 text-left">Código</th>
+                  <th className="p-2 text-left">Tipo</th>
+                  <th className="p-2 text-left">Nome/Nome fantasia</th>
+                  <th className="p-2 text-left">Razão social</th>
+                  <th className="p-2 text-left">CNPJ</th>
+                  <th className="p-2 text-left">CPF</th>
+                  <th className="p-2 text-left">Ativo</th>
+                  <th className="p-2 text-left">Telefone</th>
+                  <th className="p-2 text-left">E-mail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {importPreview.map((s, i) => (
+                  <tr key={i} className="border-t">
+                    <td className="p-2">{s.codigo ?? ""}</td>
+                    <td className="p-2">{s.tipo}</td>
+                    <td className="p-2">{s.nome_fantasia}</td>
+                    <td className="p-2">{s.razao_social}</td>
+                    <td className="p-2">{s.cnpj}</td>
+                    <td className="p-2">{s.cpf}</td>
+                    <td className="p-2">{s.ativo ? "Sim" : "Não"}</td>
+                    <td className="p-2">{s.telefone}</td>
+                    <td className="p-2">{s.email}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPreviewDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={confirmImport}><Upload className="mr-2 h-4 w-4" /> Confirmar Importação</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

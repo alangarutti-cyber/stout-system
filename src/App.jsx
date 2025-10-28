@@ -3,60 +3,37 @@ import { HashRouter as Router, Routes, Route, Navigate, Outlet } from "react-rou
 import { Helmet } from "react-helmet";
 import { Toaster } from "@/components/ui/toaster";
 import { toast } from "@/components/ui/use-toast";
+import { supabase } from "@/lib/customSupabaseClient";
+import { AuthProvider, useAuth } from "@/contexts/SupabaseAuthContext";
+import { UserProvider, useUser } from "@/contexts/UserContext";
+
+// === Telas principais ===
 import LoginScreen from "@/components/LoginScreen";
 import MainLayout from "@/components/layout/MainLayout";
 import InitialSetup from "@/components/InitialSetup";
-import { supabase } from "@/lib/customSupabaseClient";
-import { AuthProvider, useAuth } from "@/contexts/SupabaseAuthContext";
 import AdminCreation from "@/components/AdminCreation";
-import { Button } from "@/components/ui/button";
-import { UserProvider, useUser } from "@/contexts/UserContext";
 
-// === Importação dos módulos ===
+// === Módulos ===
 import Dashboard from "@/components/modules/Dashboard";
 import DRE from "@/components/modules/DRE";
 import Estoque from "@/components/modules/Estoque";
 import Caixa from "@/components/modules/Caixa";
 import Financeiro from "@/components/modules/Financeiro";
+import Pagamentos from "@/components/modules/Financeiro/Pagamentos";
 import Fornecedores from "@/components/modules/Fornecedores";
 import Funcionarios from "@/components/modules/Funcionarios";
 import Empresas from "@/components/modules/Empresas";
 import Conferencia from "@/components/modules/Conferencia";
-import MaquinasCartao from "@/components/modules/MaquinasCartao";
-import Lancamentos from "@/components/modules/Lancamentos";
 import Bancos from "@/components/modules/Bancos";
 import SaudeFinanceira from "@/components/modules/SaudeFinanceira";
-import SaudeFinanceiraAvancada from "@/components/modules/SaudeFinanceiraAvancada";
-import SaudeFinanceiraRapida from "@/components/modules/SaudeFinanceiraRapida";
-import Cobrancas from "@/components/modules/Cobrancas";
-import PDV from "@/components/modules/PDV";
-import NotasFiscais from "@/components/modules/NotasFiscais";
-import Checklists from "@/components/modules/Checklists";
-import Relatorios from "@/components/modules/Relatorios";
-import PagamentoSemanal from "@/components/modules/PagamentoSemanal";
-import Configuracoes from "@/components/modules/Configuracoes";
-import DesempenhoDiario from "@/components/modules/DesempenhoDiario";
 import PainelExecutivo from "@/components/modules/PainelExecutivo";
-import ProjecaoSemanal from "@/components/modules/ProjecaoSemanal";
-import RelatorioBotWhatsapp from "@/components/modules/RelatorioBotWhatsapp";
-import RelatorioConsolidado from "@/components/modules/RelatorioConsolidado";
-import RelatorioMensal from "@/components/modules/RelatorioMensal";
-import Cadastros from "@/components/modules/Cadastros";
-import MetasProjecoe from "@/components/modules/MetasProjecoe";
-import SuperNota from "@/components/modules/SuperNota";
-import SystemLogs from "@/components/modules/SystemLogs";
-import Etiquetas from "@/components/modules/Etiquetas";
-import EtiquetasCozinha from "@/components/modules/EtiquetasCozinha";
-import RaioXFinanceiro from "@/components/modules/RaioXFinanceiro";
-import RaioXFinanceiro2 from "@/components/modules/RaioXFinanceiro2";
-import FormasPagamento from "@/components/modules/cadastros/FormasPagamento";
-import HistoricoFinanceiroAutomatico from "@/components/modules/HistoricoFinanceiroAutomatico";
-import Despesas from "@/components/modules/cadastros/Despesas";
 import CashClosingDashboard from "@/components/caixa/CashClosingDashboard";
+import Relatorios from "@/components/modules/Relatorios";
+import Configuracoes from "@/components/modules/Configuracoes";
 
-// === Controle de setup inicial ===
+// === Controle de Setup Inicial ===
 const AppContent = () => {
-  const { session, loading: authLoading, isSupabaseConnected } = useAuth();
+  const { session, loading: authLoading } = useAuth();
   const [initialState, setInitialState] = useState({
     isSetupComplete: null,
     hasAdmin: null,
@@ -69,54 +46,61 @@ const AppContent = () => {
 
   useEffect(() => {
     const checkInitialState = async () => {
-      if (!isSupabaseConnected) {
-        setInitialState({ isSetupComplete: false, hasAdmin: false, loading: false });
-        return;
-      }
-
       try {
-        const { count: companiesCount } = await supabase
+        console.log("🔍 Checando configuração inicial...");
+
+        // Verifica se há empresas
+        const { count: companiesCount, error: companyError } = await supabase
           .from("companies")
-          .select("*", { count: "exact", head: true });
+          .select("id", { count: "exact", head: true });
+        if (companyError) throw companyError;
 
-        if (!companiesCount) {
-          setInitialState({ isSetupComplete: false, hasAdmin: false, loading: false });
-          return;
-        }
-
-        const { count: adminCount } = await supabase
+        // Verifica se há admins
+        const { count: adminCount, error: adminError } = await supabase
           .from("app_users")
-          .select("*", { count: "exact", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("is_admin", true);
+        if (adminError) throw adminError;
 
-        setInitialState({
-          isSetupComplete: true,
-          hasAdmin: adminCount > 0,
-          loading: false,
-        });
+        console.log(`🏢 Empresas: ${companiesCount} | 👤 Admins: ${adminCount}`);
+
+        if ((companiesCount ?? 0) > 0 && (adminCount ?? 0) > 0) {
+          setInitialState({ isSetupComplete: true, hasAdmin: true, loading: false });
+        } else if ((companiesCount ?? 0) > 0) {
+          setInitialState({ isSetupComplete: true, hasAdmin: false, loading: false });
+        } else {
+          setInitialState({ isSetupComplete: false, hasAdmin: false, loading: false });
+        }
       } catch (error) {
+        console.error("⚠️ Erro ao verificar estado inicial:", error);
+
+        // Permite continuar mesmo que haja erro temporário
         toast({
-          title: "Erro de inicialização",
-          description: error.message,
-          variant: "destructive",
+          title: "Aviso",
+          description: "Falha ao verificar setup. Entrando normalmente...",
+          variant: "default",
         });
-        setInitialState({ isSetupComplete: false, hasAdmin: false, loading: false });
+
+        setInitialState({ isSetupComplete: true, hasAdmin: true, loading: false });
       }
     };
 
-    if (isSupabaseConnected !== null) checkInitialState();
-  }, [isSupabaseConnected]);
+    checkInitialState();
+  }, []);
 
-  if (authLoading || initialState.loading)
+  if (authLoading || initialState.loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-xl font-semibold text-foreground">Carregando Sistema...</div>
+        <div className="text-xl font-semibold text-foreground">
+          Carregando Sistema...
+        </div>
       </div>
     );
+  }
 
   if (session) return <Outlet />;
 
-  if (!initialState.isSetupComplete)
+  if (!initialState.isSetupComplete) {
     return (
       <>
         <Helmet>
@@ -125,8 +109,9 @@ const AppContent = () => {
         <InitialSetup />
       </>
     );
+  }
 
-  if (initialState.isSetupComplete && !initialState.hasAdmin)
+  if (initialState.isSetupComplete && !initialState.hasAdmin) {
     return (
       <>
         <Helmet>
@@ -135,13 +120,14 @@ const AppContent = () => {
         <AdminCreation />
       </>
     );
+  }
 
   return <Navigate to="/login" replace />;
 };
 
-// === Loader de dados do usuário ===
+// === Loader de Dados do Usuário ===
 const UserDataLoader = ({ children }) => {
-  const { authUser, session, signOut } = useAuth();
+  const { authUser } = useAuth();
   const [userData, setUserData] = useState({
     user: null,
     companies: [],
@@ -190,7 +176,7 @@ const UserDataLoader = ({ children }) => {
   return <UserProvider value={{ ...userData }}>{children}</UserProvider>;
 };
 
-// === Wrapper dos módulos ===
+// === Wrapper dos Módulos ===
 const ModuleWrapper = ({ component: Component, ...props }) => {
   const userContext = useUser();
   if (!userContext.user) return null;
@@ -203,10 +189,8 @@ function App() {
     <Router>
       <AuthProvider>
         <Routes>
-          {/* === Login === */}
           <Route path="/login" element={<LoginScreen />} />
 
-          {/* === App === */}
           <Route element={<AppContent />}>
             <Route
               path="/"
@@ -216,7 +200,6 @@ function App() {
                 </UserDataLoader>
               }
             >
-              {/* === Início === */}
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<ModuleWrapper component={Dashboard} />} />
 
@@ -225,14 +208,10 @@ function App() {
               <Route path="caixa" element={<ModuleWrapper component={Caixa} />} />
               <Route path="financeiro" element={<ModuleWrapper component={Financeiro} />} />
               <Route path="bancos" element={<ModuleWrapper component={Bancos} />} />
+              <Route path="pagamentos" element={<ModuleWrapper component={Pagamentos} />} />
               <Route path="conferencia" element={<ModuleWrapper component={Conferencia} />} />
 
-              {/* === Páginas que redirecionam para Dashboard === */}
-              <Route path="cobrancas" element={<Navigate to="/dashboard" replace />} />
-              <Route path="pedidos" element={<Navigate to="/dashboard" replace />} />
-              <Route path="producao" element={<Navigate to="/dashboard" replace />} />
-
-              {/* === Outros módulos === */}
+              {/* === Outros Módulos === */}
               <Route path="fornecedores" element={<ModuleWrapper component={Fornecedores} />} />
               <Route path="funcionarios" element={<ModuleWrapper component={Funcionarios} />} />
               <Route path="empresas" element={<ModuleWrapper component={Empresas} />} />
@@ -244,7 +223,6 @@ function App() {
             </Route>
           </Route>
 
-          {/* === Fallback === */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <Toaster />
