@@ -8,18 +8,17 @@ import {
   PackageSearch,
   FileText,
   MessageSquare,
-  ArrowRight,
   CheckCircle2,
   Loader,
   Truck,
   XCircle,
-  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/customSupabaseClient";
 import html2pdf from "html2pdf.js";
+import PrintablePedidos from "@/components/modules/PrintablePedidos";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -116,7 +115,7 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
     let query = supabase
       .from("supply_orders")
       .select(
-        `*, company:company_id (name, phone),
+        `*, company:company_id (name, cnpj, address, phone),
          user:user_id (name),
          supply_order_items (*, products (*, product_categories (name)))`
       )
@@ -242,18 +241,272 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
 
   const removeFromCart = (id) => setCart(cart.filter((p) => p.id !== id));
 
-  // ===== Agrupar itens =====
-  const groupedItems = (items) => {
-    if (!items) return {};
-    return items.reduce((acc, item) => {
-      const cat = item.products?.product_categories?.name || "Sem Categoria";
-      if (!acc[cat]) acc[cat] = [];
-      acc[cat].push(item);
-      return acc;
-    }, {});
+  // ===== Gerar e enviar PDF =====
+  const generateAndUploadPDF = async (order) => {
+    const element = pdfRefs.current[order.id];
+    if (!element) return;
+
+    try {
+      const opt = {
+        margin: [10, 10, 15, 10],
+        filename: `pedido_${order.id}.pdf`,
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      };
+      const pdfBlob = await html2pdf().from(element).set(opt).output("blob");
+
+      const filePath = `pedidos/pedido_${order.id}.pdf`;
+      const { error } = await supabase.storage
+        .from("documentos")
+        .upload(filePath, pdfBlob, {
+          contentType: "application/pdf",
+          upsert: true,
+        });
+      if (error) throw error;
+
+      const { data } = supabase.storage.from("documentos").getPublicUrl(filePath);
+      return data.publicUrl;
+    } catch (err) {
+      console.error("Erro ao enviar PDF:", err.message);
+      toast({
+        title: "Erro ao enviar PDF",
+        description: err.message,
+        variant: "destructive",
+      });
+      return null;
+    }
   };
 
-  // ===== Tela de criar pedido =====
+  const sendWhats = async (order) => {
+    const phone = order.company?.phone?.replace(/\D/g, "");
+    if (!phone) {
+      toast({ title: "Telefone não encontrado", variant: "destructive" });
+      return;
+    }
+
+    const pdfUrl = await generateAndUploadPDF(order);
+    if (!pdfUrl) return;
+
+    const resumo = order.supply_order_items
+      ?.slice(0, 5)
+      .map(
+        (i) =>
+          `${i.products?.name} (${i.ordered_quantity || i.quantity} ${
+            i.ordered_unit || i.products?.unit
+          })`
+      )
+      .join(", ");
+
+    const total = order.supply_order_items?.reduce(
+      (sum, i) => sum + (i.total_price || 0),
+      0
+    );
+
+    const msg = encodeURIComponent(
+      `Olá! Segue o pedido de insumos #${order.id} da empresa ${order.company?.name}.\n\n🧾 *Resumo do Pedido:*\n${resumo}${
+        order.supply_order_items.length > 5 ? ", ..." : ""
+      }\n\n💰 *Total:* ${total?.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+      })}\n📎 PDF: ${pdfUrl}`
+    );
+
+    window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+  };
+
+  // ===== Visualizar PDF =====
+  const viewPDF = (order) => {
+    const element = pdfRefs.current[order.id];
+    if (!element) return;
+
+    html2pdf()
+      .from(element)
+      .set({
+        margin: [10, 10, 15, 10],
+        filename: `pedido_${order.id}.pdf`,
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      })
+      .toPdf()
+      .get("pdf")
+      .then(function (pdf) {
+        // ===== Numeração automática =====
+        const totalPages = pdf.internal.getNumberOfPages();
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        pdf.setFontSize(9);
+        pdf.setTextColor(80, 80, 80);
+
+        for (let i = 1; i <= totalPages; i++) {
+          pdf.setPage(i);
+          pdf.text(
+            `Página ${i} de ${totalPages}`,
+            pageWidth / 2,
+            pageHeight - 8,
+            { align: "center" }
+          );
+        }
+
+        // ===== Abrir visualização =====
+        const blob = pdf.output("blob");
+        const url = URL.createObjectURL(blob);
+
+        const newWindow = window.open("", "_blank");
+        newWindow.document.write(`
+          <html>
+            <head>
+              <title>Pedido #${order.id}</title>
+              <style>
+                body {
+                  margin: 0;
+                  background: #f0f0f0;
+                  font-family: Arial, sans-serif;
+                  display: flex;
+                  flex-direction: column;
+                  align-items: center;
+                }
+                .toolbar {
+                  display: flex;
+                  gap: 10px;
+                  justify-content: center;
+                  margin: 10px;
+                }
+                button {
+                  background-color: #C8102E;
+                  color: white;
+                  border: none;
+                  padding: 8px 18px;
+                  font-size: 13px;
+                  border-radius: 6px;
+                  cursor: pointer;
+                  transition: background-color 0.2s ease;
+                }
+                button:hover { background-color: #a00; }
+                iframe {
+                  width: 100%;
+                  height: 94vh;
+                  border: none;
+                  background: white;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="toolbar">
+                <button id="downloadBtn">💾 Baixar PDF</button>
+                <button id="printBtn">🖨️ Imprimir</button>
+              </div>
+              <iframe src="${url}" id="pdfFrame"></iframe>
+              <script>
+                document.getElementById('downloadBtn').addEventListener('click', () => {
+                  const a = document.createElement('a');
+                  a.href = '${url}';
+                  a.download = 'pedido_${order.id}.pdf';
+                  a.click();
+                });
+                document.getElementById('printBtn').addEventListener('click', () => {
+                  document.getElementById('pdfFrame').contentWindow.print();
+                });
+              </script>
+            </body>
+          </html>
+        `);
+        newWindow.document.close();
+      })
+      .catch((err) => {
+        console.error("Erro ao gerar PDF:", err);
+        toast({
+          title: "Erro ao gerar PDF",
+          description: err.message,
+          variant: "destructive",
+        });
+      });
+  };
+
+  // ===== Pedidos enviados =====
+  const renderEnviados = () => (
+    <div className="bg-card p-6 rounded-xl shadow-sm">
+      <h2 className="text-xl font-bold mb-4">Pedidos Enviados</h2>
+      {loading ? (
+        <p>Carregando...</p>
+      ) : sentOrders.length === 0 ? (
+        <p className="text-muted-foreground">Nenhum pedido encontrado.</p>
+      ) : (
+        sentOrders.map((order) => {
+          const config = statusConfig[order.status] || statusConfig.Pendente;
+          const Icon = config.icon;
+          const total = order.supply_order_items?.reduce(
+            (sum, i) => sum + (i.total_price || 0),
+            0
+          );
+
+          return (
+            <div key={order.id} className="border p-4 rounded-lg mb-3">
+              <div className="flex justify-between flex-wrap items-center mb-2">
+                <div>
+                  <p className="font-bold">Pedido #{order.id}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Empresa: {order.company?.name}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Solicitante: {order.user?.name}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Data: {new Date(order.order_date).toLocaleDateString()}
+                  </p>
+                </div>
+                <span
+                  className={`px-3 py-1 rounded-full text-xs font-semibold ${config.bg} ${config.color}`}
+                >
+                  <Icon className="inline w-3 h-3 mr-1" /> {order.status}
+                </span>
+              </div>
+
+              <p className="text-right font-bold mt-2">
+                Total:{" "}
+                {total?.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })}
+              </p>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => viewPDF(order)}>
+                  <FileText className="w-4 h-4 mr-2" /> Visualizar PDF
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-green-500 hover:bg-green-600 text-white"
+                  onClick={() => sendWhats(order)}
+                >
+                  <MessageSquare className="w-4 h-4 mr-2" /> WhatsApp (PDF)
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => {
+                    setOrderToDelete(order.id);
+                    setIsDeleteDialogOpen(true);
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" /> Remover
+                </Button>
+              </div>
+
+              {/* PDF oculto */}
+              <div className="hidden">
+                <PrintablePedidos
+                  ref={(el) => (pdfRefs.current[order.id] = el)}
+                  order={order}
+                />
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+
+  // ===== Tela de criação =====
   const renderCriar = () => (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 bg-card p-6 rounded-xl shadow-sm">
@@ -389,186 +642,6 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
     </div>
   );
 
-  // ===== Pedidos enviados =====
-  const renderEnviados = () => (
-    <div className="bg-card p-6 rounded-xl shadow-sm">
-      <h2 className="text-xl font-bold mb-4">Pedidos Enviados</h2>
-      {loading ? (
-        <p>Carregando...</p>
-      ) : sentOrders.length === 0 ? (
-        <p className="text-muted-foreground">Nenhum pedido encontrado.</p>
-      ) : (
-        sentOrders.map((order) => {
-          const config = statusConfig[order.status] || statusConfig.Pendente;
-          const Icon = config.icon;
-          const grouped = groupedItems(order.supply_order_items);
-          const total = order.supply_order_items?.reduce(
-            (sum, i) => sum + (i.total_price || 0),
-            0
-          );
-
-          const generatePDF = () => {
-            const element = pdfRefs.current[order.id];
-            if (!element) return;
-            html2pdf()
-              .from(element)
-              .set({
-                margin: [10, 10, 10, 10],
-                filename: `pedido_${order.id}.pdf`,
-                html2canvas: { scale: 2 },
-                jsPDF: { unit: "mm", format: "a4" },
-              })
-              .save();
-          };
-
-          const openPDF = () => {
-            const element = pdfRefs.current[order.id];
-            if (!element) return;
-            const win = window.open("");
-            win.document.write(element.outerHTML);
-            win.document.close();
-          };
-
-          const sendWhats = () => {
-            const phone = order.company?.phone?.replace(/\D/g, "");
-            if (!phone) {
-              toast({ title: "Telefone não encontrado", variant: "destructive" });
-              return;
-            }
-            const msg = encodeURIComponent(
-              `Olá! Segue o pedido de insumos #${order.id} da empresa ${order.company?.name}.`
-            );
-            window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
-          };
-
-          return (
-            <div key={order.id} className="border p-4 rounded-lg mb-3">
-              <div className="flex justify-between flex-wrap items-center mb-2">
-                <div>
-                  <p className="font-bold">Pedido #{order.id}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Empresa: {order.company?.name}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Solicitante: {order.user?.name}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Data: {new Date(order.order_date).toLocaleDateString()}
-                  </p>
-                </div>
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-semibold ${config.bg} ${config.color}`}
-                >
-                  <Icon className="inline w-3 h-3 mr-1" /> {order.status}
-                </span>
-              </div>
-
-              {Object.entries(grouped).map(([cat, items]) => (
-                <div key={cat}>
-                  <p className="font-semibold">{cat}</p>
-                  <ul className="pl-4 list-disc text-sm text-muted-foreground">
-                    {items.map((i) => (
-                      <li key={i.id}>
-                        {i.products?.name} —{" "}
-                        {i.ordered_quantity || i.quantity}{" "}
-                        {i.ordered_unit || i.products?.unit}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-
-              <p className="text-right font-bold mt-2">
-                Total:{" "}
-                {total?.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })}
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button size="sm" onClick={generatePDF}>
-                  <FileText className="w-4 h-4 mr-2" /> PDF
-                </Button>
-                <Button size="sm" variant="outline" onClick={openPDF}>
-                  <Eye className="w-4 h-4 mr-2" /> Abrir
-                </Button>
-                <Button
-                  size="sm"
-                  className="bg-green-500 hover:bg-green-600 text-white"
-                  onClick={sendWhats}
-                >
-                  <MessageSquare className="w-4 h-4 mr-2" /> WhatsApp
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => {
-                    setOrderToDelete(order.id);
-                    setIsDeleteDialogOpen(true);
-                  }}
-                >
-                  <Trash2 className="w-4 h-4 mr-2" /> Remover
-                </Button>
-              </div>
-
-              {/* PDF oculto */}
-              <div ref={(el) => (pdfRefs.current[order.id] = el)} className="hidden">
-                <h2>Pedido #{order.id}</h2>
-                <p>Empresa: {order.company?.name}</p>
-                <p>Solicitante: {order.user?.name}</p>
-                <hr />
-                {Object.entries(grouped).map(([cat, items]) => (
-                  <div key={cat}>
-                    <h3>{cat}</h3>
-                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                      <thead>
-                        <tr>
-                          <th align="left">Produto</th>
-                          <th align="right">Qtd</th>
-                          <th align="right">Vl. Unit.</th>
-                          <th align="right">Vl. Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {items.map((i) => (
-                          <tr key={i.id}>
-                            <td>{i.products?.name}</td>
-                            <td align="right">{i.ordered_quantity || i.quantity}</td>
-                            <td align="right">
-                              {(i.unit_price || 0).toLocaleString("pt-BR", {
-                                style: "currency",
-                                currency: "BRL",
-                              })}
-                            </td>
-                            <td align="right">
-                              {(i.total_price || 0).toLocaleString("pt-BR", {
-                                style: "currency",
-                                currency: "BRL",
-                              })}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
-                <hr />
-                <p className="font-bold text-right mt-2">
-                  Valor Total:{" "}
-                  {total?.toLocaleString("pt-BR", {
-                    style: "currency",
-                    currency: "BRL",
-                  })}
-                </p>
-              </div>
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
-
   return (
     <>
       <div className="space-y-6">
@@ -608,6 +681,7 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
         </AnimatePresence>
       </div>
 
+      {/* ===== Confirmação de exclusão ===== */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

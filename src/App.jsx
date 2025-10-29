@@ -1,3 +1,4 @@
+// src/App.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import { HashRouter as Router, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { Helmet } from "react-helmet";
@@ -19,7 +20,7 @@ import DRE from "@/components/modules/DRE";
 import Estoque from "@/components/modules/Estoque";
 import Caixa from "@/components/modules/Caixa";
 import Financeiro from "@/components/modules/Financeiro";
-import Pagamentos from "@/components/modules/Financeiro/Pagamentos";
+import Pagamentos from "@/components/modules/Pagamentos"; // ✅ corrigido
 import Fornecedores from "@/components/modules/Fornecedores";
 import Funcionarios from "@/components/modules/Funcionarios";
 import Empresas from "@/components/modules/Empresas";
@@ -27,10 +28,10 @@ import Conferencia from "@/components/modules/Conferencia";
 import Bancos from "@/components/modules/Bancos";
 import SaudeFinanceira from "@/components/modules/SaudeFinanceira";
 import PainelExecutivo from "@/components/modules/PainelExecutivo";
-import CashClosingDashboard from "@/components/caixa/CashClosingDashboard";
+import CashClosingDashboard from "@/components/modules/CashClosingDashboard"; // ✅ ajustado
 import Relatorios from "@/components/modules/Relatorios";
 import Configuracoes from "@/components/modules/Configuracoes";
-import Pedidos from "@/components/modules/Pedidos"; // ✅ novo módulo integrado
+import Pedidos from "@/components/modules/Pedidos"; // ✅ módulo integrado
 
 // === Controle de Setup Inicial ===
 const AppContent = () => {
@@ -87,9 +88,7 @@ const AppContent = () => {
   if (authLoading || initialState.loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-xl font-semibold text-foreground">
-          Carregando Sistema...
-        </div>
+        <div className="text-xl font-semibold text-foreground">Carregando Sistema...</div>
       </div>
     );
   }
@@ -135,7 +134,7 @@ const UserDataLoader = ({ children }) => {
     try {
       const { data: appUser } = await supabase
         .from("app_users")
-        .select("*, company_ids:user_company_access(company_id)")
+        .select("*") // ✅ Simplificado para evitar erro de relação
         .eq("uuid", currentAuthUser.id)
         .single();
 
