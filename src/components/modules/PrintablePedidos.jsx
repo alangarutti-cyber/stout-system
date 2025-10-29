@@ -1,17 +1,29 @@
 import React, { forwardRef } from "react";
-import logoStout from "@/assets/LogoStoutBurger.png";
+import logo from "@/assets/LogoStoutBurger.png";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
+import "dayjs/locale/pt-br";
+
+// Configurações do Day.js
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.locale("pt-br");
+dayjs.tz.setDefault("America/Sao_Paulo");
 
 const PrintablePedidos = forwardRef(({ order }, ref) => {
   if (!order) return null;
 
+  // Agrupar itens por categoria
   const groupedItems = order.supply_order_items?.reduce((acc, item) => {
-    const category = item.products?.product_categories?.name || "Outros";
+    const category = item.products?.product_categories?.name || "Sem Categoria";
     if (!acc[category]) acc[category] = [];
     acc[category].push(item);
     return acc;
   }, {});
 
-  const total = order.supply_order_items?.reduce(
+  // Total geral
+  const totalGeral = order.supply_order_items?.reduce(
     (sum, i) => sum + (i.total_price || 0),
     0
   );
@@ -19,224 +31,183 @@ const PrintablePedidos = forwardRef(({ order }, ref) => {
   return (
     <div
       ref={ref}
-      id={`printable-pedido-${order.id}`}
       style={{
         fontFamily: "Arial, sans-serif",
+        padding: "10mm 8mm 12mm 8mm",
         color: "#222",
-        width: "210mm",
-        minHeight: "297mm",
-        padding: "15mm 15mm 20mm 15mm",
-        boxSizing: "border-box",
+        fontSize: "11px",
+        width: "190mm",
+        margin: "0 auto",
       }}
     >
-      <style>
-        {`
-          @media print {
-            @page {
-              margin: 12mm;
-            }
-            .page-break {
-              page-break-before: always;
-            }
-            .no-break {
-              page-break-inside: avoid;
-            }
-          }
-        `}
-      </style>
-
-      {/* ===== Cabeçalho minimalista ===== */}
+      {/* ===== CABEÇALHO ===== */}
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
+          alignItems: "flex-start",
+          borderBottom: "1px solid #ccc",
+          paddingBottom: "6px",
           marginBottom: "8px",
         }}
       >
         <img
-          src={logoStout}
+          src={logo}
           alt="Logo Stout Burger"
-          style={{ height: "35px", marginRight: "10px" }}
+          style={{ height: "38px", opacity: 0.9 }}
         />
-        <h2
-          style={{
-            margin: "0",
-            fontSize: "16px",
-            fontWeight: "bold",
-            textAlign: "right",
-          }}
-        >
-          Pedido de Insumos #{order.id}
-        </h2>
-      </div>
-
-      <hr style={{ border: "0.5px solid #ccc", margin: "4px 0 8px 0" }} />
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          fontSize: "11px",
-          marginBottom: "10px",
-        }}
-      >
-        <div>
-          <p style={{ margin: "2px 0" }}>
+        <div style={{ textAlign: "right", lineHeight: "1.4" }}>
+          <h2 style={{ fontSize: "14px", margin: 0 }}>
+            Pedido de Insumos #{order.id}
+          </h2>
+          <p style={{ margin: 0 }}>
             <strong>Empresa:</strong> {order.company?.name}
           </p>
-          <p style={{ margin: "2px 0" }}>
-            <strong>Data:</strong>{" "}
-            {new Date(order.order_date).toLocaleDateString("pt-BR")}
-          </p>
-        </div>
-        <div>
-          <p style={{ margin: "2px 0" }}>
+          <p style={{ margin: 0 }}>
             <strong>Solicitante:</strong> {order.user?.name}
           </p>
-          <p style={{ margin: "2px 0" }}>
-            <strong>Status:</strong> {order.status || "Pendente"}
+          <p style={{ margin: 0 }}>
+            <strong>Data:</strong>{" "}
+            {dayjs(order.order_date).tz().format("DD/MM/YYYY")}
+          </p>
+          <p style={{ margin: 0 }}>
+            <strong>Status:</strong> {order.status}
           </p>
         </div>
       </div>
 
-      {/* ===== Conteúdo ===== */}
-      <main style={{ marginBottom: "45mm" }}>
-        {Object.entries(groupedItems || {}).map(([cat, items], catIndex) => (
+      {/* ===== ITENS AGRUPADOS ===== */}
+      {Object.entries(groupedItems || {}).map(([categoria, itens]) => (
+        <div key={categoria} style={{ marginBottom: "8px" }}>
           <div
-            key={cat}
-            className="no-break"
-            style={{ marginBottom: "20px", pageBreakInside: "avoid" }}
+            style={{
+              backgroundColor: "#C8102E",
+              color: "#fff",
+              fontWeight: "bold",
+              padding: "4px 8px",
+              borderRadius: "4px 4px 0 0",
+              fontSize: "11px",
+            }}
           >
-            <h3
-              style={{
-                background: "#C8102E",
-                color: "white",
-                padding: "5px 8px",
-                borderRadius: "4px",
-                fontSize: "12.5px",
-                fontWeight: "bold",
-              }}
-            >
-              {cat}
-            </h3>
-
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: "11px",
-                marginTop: "4px",
-              }}
-            >
-              <thead>
-                <tr style={{ background: "#f5f5f5" }}>
-                  <th style={{ padding: "4px" }}>Produto</th>
-                  <th style={{ padding: "4px", textAlign: "center" }}>Qtd</th>
-                  <th style={{ padding: "4px", textAlign: "center" }}>Unid.</th>
-                  <th style={{ padding: "4px", textAlign: "right" }}>Vl. Unit.</th>
-                  <th style={{ padding: "4px", textAlign: "right" }}>Vl. Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((i, idx) => (
-                  <tr
-                    key={idx}
-                    style={{
-                      borderBottom: "1px solid #ddd",
-                      pageBreakInside: "avoid",
-                    }}
-                  >
-                    <td style={{ padding: "3px" }}>{i.products?.name}</td>
-                    <td style={{ padding: "3px", textAlign: "center" }}>
-                      {i.ordered_quantity || i.quantity}
-                    </td>
-                    <td style={{ padding: "3px", textAlign: "center" }}>
-                      {i.ordered_unit || i.products?.unit}
-                    </td>
-                    <td style={{ padding: "3px", textAlign: "right" }}>
-                      {(i.unit_price || 0).toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      })}
-                    </td>
-                    <td style={{ padding: "3px", textAlign: "right" }}>
-                      {(i.total_price || 0).toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      })}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {catIndex % 4 === 3 && <div className="page-break"></div>}
+            {categoria}
           </div>
-        ))}
-      </main>
 
-      {/* ===== Total geral ===== */}
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              marginBottom: "6px",
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#f2f2f2", textAlign: "left" }}>
+                <th style={{ padding: "3px 6px", width: "45%" }}>Produto</th>
+                <th style={{ padding: "3px 6px", width: "10%" }}>Qtd</th>
+                <th style={{ padding: "3px 6px", width: "10%" }}>Unid.</th>
+                <th style={{ padding: "3px 6px", width: "15%", textAlign: "right" }}>
+                  Vl. Unit.
+                </th>
+                <th style={{ padding: "3px 6px", width: "20%", textAlign: "right" }}>
+                  Vl. Total
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {itens.map((item) => (
+                <tr
+                  key={item.id}
+                  style={{
+                    borderBottom: "1px solid #eee",
+                    verticalAlign: "top",
+                  }}
+                >
+                  <td style={{ padding: "3px 6px" }}>{item.products?.name}</td>
+                  <td style={{ padding: "3px 6px", textAlign: "center" }}>
+                    {item.ordered_quantity || item.quantity}
+                  </td>
+                  <td style={{ padding: "3px 6px", textAlign: "center" }}>
+                    {item.ordered_unit || item.products?.unit}
+                  </td>
+                  <td style={{ padding: "3px 6px", textAlign: "right" }}>
+                    {(item.unit_price || 0).toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}
+                  </td>
+                  <td style={{ padding: "3px 6px", textAlign: "right" }}>
+                    {(item.total_price || 0).toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+
+      {/* ===== TOTAL GERAL ===== */}
       <div
         style={{
           textAlign: "right",
-          fontSize: "12px",
           fontWeight: "bold",
-          marginTop: "10px",
+          fontSize: "12px",
+          borderTop: "2px solid #C8102E",
+          paddingTop: "4px",
+          marginTop: "8px",
         }}
       >
         Total do Pedido:{" "}
-        {total?.toLocaleString("pt-BR", {
+        {totalGeral?.toLocaleString("pt-BR", {
           style: "currency",
           currency: "BRL",
         })}
       </div>
 
-      {/* ===== Rodapé ===== */}
-      <footer
+      {/* ===== RODAPÉ ===== */}
+      <div
         style={{
-          position: "absolute",
-          bottom: "10mm",
-          left: 0,
-          right: 0,
-          textAlign: "center",
-          fontSize: "9.5px",
-          color: "#444",
+          display: "flex",
+          justifyContent: "space-between",
+          marginTop: "18px",
+          fontSize: "9px",
+          color: "#555",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-around",
-            marginBottom: "4mm",
-          }}
-        >
+        <div style={{ textAlign: "center", width: "45%" }}>
           <div
             style={{
-              width: "40%",
-              borderTop: "1px solid #333",
-              paddingTop: "2mm",
+              borderTop: "1px solid #000",
+              marginBottom: "2px",
+              width: "100%",
             }}
-          >
-            Conferido por
-          </div>
-          <div
-            style={{
-              width: "40%",
-              borderTop: "1px solid #333",
-              paddingTop: "2mm",
-            }}
-          >
-            Assinatura do responsável
-          </div>
+          ></div>
+          Conferido por
         </div>
-        <p style={{ fontSize: "9px" }}>
-          Gerado automaticamente pelo <b>Stout System</b> —{" "}
-          {new Date().toLocaleDateString("pt-BR")}
-        </p>
-      </footer>
+        <div style={{ textAlign: "center", width: "45%" }}>
+          <div
+            style={{
+              borderTop: "1px solid #000",
+              marginBottom: "2px",
+              width: "100%",
+            }}
+          ></div>
+          Assinatura do Responsável
+        </div>
+      </div>
 
-      <div style={{ height: "45mm" }}></div>
+      <p
+        style={{
+          textAlign: "center",
+          marginTop: "10px",
+          fontSize: "8px",
+          color: "#777",
+        }}
+      >
+        Gerado automaticamente pelo <strong>Stout System</strong> —{" "}
+        {dayjs().tz().format("DD/MM/YYYY HH:mm")}
+      </p>
     </div>
   );
 });
