@@ -30,6 +30,7 @@ import PainelExecutivo from "@/components/modules/PainelExecutivo";
 import CashClosingDashboard from "@/components/caixa/CashClosingDashboard";
 import Relatorios from "@/components/modules/Relatorios";
 import Configuracoes from "@/components/modules/Configuracoes";
+import Pedidos from "@/components/modules/Pedidos"; // ✅ novo módulo integrado
 
 // === Controle de Setup Inicial ===
 const AppContent = () => {
@@ -49,13 +50,11 @@ const AppContent = () => {
       try {
         console.log("🔍 Checando configuração inicial...");
 
-        // Verifica se há empresas
         const { count: companiesCount, error: companyError } = await supabase
           .from("companies")
           .select("id", { count: "exact", head: true });
         if (companyError) throw companyError;
 
-        // Verifica se há admins
         const { count: adminCount, error: adminError } = await supabase
           .from("app_users")
           .select("id", { count: "exact", head: true })
@@ -73,14 +72,11 @@ const AppContent = () => {
         }
       } catch (error) {
         console.error("⚠️ Erro ao verificar estado inicial:", error);
-
-        // Permite continuar mesmo que haja erro temporário
         toast({
           title: "Aviso",
           description: "Falha ao verificar setup. Entrando normalmente...",
           variant: "default",
         });
-
         setInitialState({ isSetupComplete: true, hasAdmin: true, loading: false });
       }
     };
@@ -211,7 +207,10 @@ function App() {
               <Route path="pagamentos" element={<ModuleWrapper component={Pagamentos} />} />
               <Route path="conferencia" element={<ModuleWrapper component={Conferencia} />} />
 
-              {/* === Outros Módulos === */}
+              {/* === Operacional === */}
+              <Route path="pedidos" element={<ModuleWrapper component={Pedidos} />} /> {/* ✅ Novo módulo Pedidos */}
+
+              {/* === Cadastros / Configurações === */}
               <Route path="fornecedores" element={<ModuleWrapper component={Fornecedores} />} />
               <Route path="funcionarios" element={<ModuleWrapper component={Funcionarios} />} />
               <Route path="empresas" element={<ModuleWrapper component={Empresas} />} />
