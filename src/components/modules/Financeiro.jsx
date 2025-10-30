@@ -1,360 +1,279 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { Plus, Download, Upload, Save, Search, DollarSign, Edit, Trash2 } from "lucide-react";
-import * as XLSX from "xlsx";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/ui/use-toast";
+import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/customSupabaseClient";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { motion, AnimatePresence } from "framer-motion";
+import { CheckCircle2, Loader2, DollarSign } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { useUser } from "@/contexts/UserContext";
 
-/* Helpers */
-const toBRL = (v) =>
-  `R$ ${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
-const dateBR = (d) => (d ? new Date(d).toLocaleDateString("pt-BR") : "—");
-const formatSupplierDisplay = (s) => {
-  if (!s) return "N/A";
-  const tipo = (s.tipo || (s.cnpj ? "PJ" : "PF")).toUpperCase();
-  if (tipo === "PJ") {
-    const nome = s.razao_social || s.nome_fantasia || "";
-    const id = s.cnpj ? ` (${s.cnpj})` : "";
-    return `${nome}${id}`.trim() || "N/A";
-  }
-  const nome = s.nome_fantasia || "";
-  const id = s.cpf ? ` (${s.cpf})` : "";
-  return `${nome}${id}`.trim() || "N/A";
-};
-
 const Financeiro = () => {
-  const { user, companies, userCompanyAccess } = useUser();
   const { toast } = useToast();
-
-  /* Estados principais */
+  const { user, companies, userCompanyAccess } = useUser();
   const [activeTab, setActiveTab] = useState("pagar");
-  const [selectedCompany, setSelectedCompany] = useState("all");
-  const [suppliers, setSuppliers] = useState([]);
-  const [paymentMethods, setPaymentMethods] = useState([]);
-  const [contasPagar, setContasPagar] = useState([]);
-  const [bancos, setBancos] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedCompany, setSelectedCompany] = useState(null);
+  const [allowedCompanies, setAllowedCompanies] = useState([]);
 
-  /* Modal Nova Conta */
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editandoConta, setEditandoConta] = useState(false);
-  const [newConta, setNewConta] = useState({
-    id: null,
-    description: "",
-    value: "",
-    due_date: "",
-    company_id: "",
-    supplier_id: "",
-    payment_method_id: "",
-    observacoes: "",
-  });
-
-  /* Modal Pagamento */
-  const [showPagamentoModal, setShowPagamentoModal] = useState(false);
-  const [contaSelecionada, setContaSelecionada] = useState(null);
-  const [bancoSelecionado, setBancoSelecionado] = useState("");
-  const [valorPago, setValorPago] = useState("");
-  const [dataPagamento, setDataPagamento] = useState("");
-
-  /* Empresas permitidas */
-  const allowedCompanies = React.useMemo(() => {
-    if (!user || !companies || !userCompanyAccess) return [];
-    if (user.is_admin) return companies;
-    const ids = userCompanyAccess
-      .filter((a) => a.user_id === user.id)
-      .map((a) => a.company_id);
-    return companies.filter((c) => ids.includes(c.id));
+  // === Empresas com acesso ===
+  useEffect(() => {
+    if (user && companies && userCompanyAccess) {
+      if (user.is_admin || user.role === "Super Administrador") {
+        setAllowedCompanies(companies);
+        if (companies.length > 0) setSelectedCompany(companies[0].id);
+      } else {
+        const accessIds = userCompanyAccess
+          .filter((a) => a.user_id === user.id)
+          .map((a) => a.company_id);
+        const allowed = companies.filter((c) => accessIds.includes(c.id));
+        setAllowedCompanies(allowed);
+        if (allowed.length > 0) setSelectedCompany(allowed[0].id);
+      }
+    }
   }, [user, companies, userCompanyAccess]);
 
-  /* Buscar dados iniciais */
-  const fetchInitialData = useCallback(async () => {
+  // === Buscar lançamentos ===
+  const fetchData = useCallback(async () => {
+    if (!selectedCompany) return;
     setLoading(true);
-    const [suppliersRes, payMethodsRes, pagarRes, bancosRes] = await Promise.all([
-      supabase.from("suppliers").select("*").order("codigo", { ascending: true }),
-      supabase.from("payment_methods").select("*"),
-      supabase
-        .from("contas_pagar")
-        .select("*, supplier:suppliers(*), companies(name)")
-        .order("due_date", { ascending: true }),
-      supabase.from("bancos").select("id, nome"),
-    ]);
 
-    setSuppliers(suppliersRes.data || []);
-    setPaymentMethods(payMethodsRes.data || []);
-    setContasPagar(pagarRes.data || []);
-    setBancos(bancosRes.data || []);
+    const table = activeTab === "pagar" ? "contas_pagar" : "contas_receber";
+    const campos =
+      activeTab === "pagar"
+        ? `id, description, value, due_date, status, payment_date, valor_pago, company_id, origem`
+        : `id, description, value, due_date, status, payment_date, valor_recebido, company_id, origem`;
+
+    const { data, error } = await supabase
+      .from(table)
+      .select(campos)
+      .eq("company_id", selectedCompany)
+      .order("due_date", { ascending: true });
+
+    if (error) {
+      toast({
+        title: "Erro ao buscar dados",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      setData(data);
+    }
     setLoading(false);
-  }, []);
+  }, [selectedCompany, activeTab, toast]);
 
   useEffect(() => {
-    fetchInitialData();
-  }, [fetchInitialData]);
+    fetchData();
+  }, [fetchData]);
 
-  /* Abrir modal de pagamento */
-  const abrirModalPagamento = (conta) => {
-    setContaSelecionada(conta);
-    setValorPago(conta.value);
-    setDataPagamento(new Date().toISOString().split("T")[0]);
-    setShowPagamentoModal(true);
-  };
-
-  /* Confirmar pagamento */
-  const confirmarPagamento = async () => {
-    if (!bancoSelecionado) {
-      toast({ title: "Selecione um banco antes de confirmar.", variant: "destructive" });
-      return;
-    }
+  // === Atualizar status ===
+  const handleStatus = async (item) => {
+    const table = activeTab === "pagar" ? "contas_pagar" : "contas_receber";
+    const newStatus = activeTab === "pagar" ? "paid" : "received";
+    const valorCampo = activeTab === "pagar" ? "valor_pago" : "valor_recebido";
 
     const { error } = await supabase
-      .from("contas_pagar")
+      .from(table)
       .update({
-        status: "Paga",
-        payment_date: dataPagamento,
-        valor_pago: valorPago,
-        bank_id: bancoSelecionado,
+        status: newStatus,
+        payment_date: new Date().toISOString().split("T")[0],
+        [valorCampo]: item.value,
       })
-      .eq("id", contaSelecionada.id);
+      .eq("id", item.id);
 
     if (error) {
-      toast({ title: "Erro ao registrar pagamento", description: error.message, variant: "destructive" });
+      toast({
+        title: "Erro ao atualizar status",
+        description: error.message,
+        variant: "destructive",
+      });
     } else {
-      toast({ title: "Pagamento registrado com sucesso!" });
-      setShowPagamentoModal(false);
-      fetchInitialData();
+      toast({ title: "Lançamento atualizado com sucesso!" });
+      fetchData();
     }
   };
 
-  /* Abrir modal para editar conta */
-  const editarConta = (conta) => {
-    setEditandoConta(true);
-    setNewConta({
-      ...conta,
-      description: conta.description || "",
-      value: conta.value || "",
-      due_date: conta.due_date || "",
-      company_id: conta.company_id || "",
-      supplier_id: conta.supplier_id || "",
-      payment_method_id: conta.payment_method_id || "",
-      observacoes: conta.observacoes || "",
-    });
-    setIsDialogOpen(true);
-  };
+  // === Editar lançamento ===
+  const handleEdit = async (item) => {
+    const novaDescricao = prompt("Nova descrição:", item.description);
+    if (novaDescricao === null) return;
 
-  /* Excluir conta */
-  const excluirConta = async (conta) => {
-    if (conta.status === "Paga") {
-      toast({ title: "Não é possível excluir contas já pagas.", variant: "destructive" });
+    const novoValor = parseFloat(prompt("Novo valor:", item.value));
+    if (isNaN(novoValor)) {
+      toast({ title: "Valor inválido", variant: "destructive" });
       return;
     }
 
-    const confirmar = window.confirm(`Deseja realmente excluir "${conta.description}"?`);
-    if (!confirmar) return;
+    const novaData = prompt(
+      "Nova data de vencimento (AAAA-MM-DD):",
+      item.due_date
+    );
 
-    const { error } = await supabase.from("contas_pagar").delete().eq("id", conta.id);
+    const table = activeTab === "pagar" ? "contas_pagar" : "contas_receber";
+    const { error } = await supabase
+      .from(table)
+      .update({
+        description: novaDescricao,
+        value: novoValor,
+        due_date: novaData,
+      })
+      .eq("id", item.id);
+
     if (error) {
-      toast({ title: "Erro ao excluir conta", description: error.message, variant: "destructive" });
+      toast({
+        title: "Erro ao editar lançamento",
+        description: error.message,
+        variant: "destructive",
+      });
     } else {
-      toast({ title: "Conta excluída com sucesso!" });
-      fetchInitialData();
+      toast({ title: "Lançamento atualizado com sucesso!" });
+      fetchData();
     }
   };
 
-  /* Salvar nova conta ou editar */
-  const handleSaveConta = async () => {
-    if (!newConta.description || !newConta.value || !newConta.due_date || !newConta.company_id) {
-      toast({ title: "Preencha os campos obrigatórios", variant: "destructive" });
-      return;
-    }
+  // === Excluir lançamento ===
+  const handleDelete = async (item) => {
+    if (!confirm(`Excluir "${item.description}"?`)) return;
 
-    const tableName = "contas_pagar";
+    const table = activeTab === "pagar" ? "contas_pagar" : "contas_receber";
+    const { error } = await supabase.from(table).delete().eq("id", item.id);
 
-    if (editandoConta && newConta.id) {
-      const { error } = await supabase.from(tableName).update({
-        description: newConta.description,
-        value: newConta.value,
-        due_date: newConta.due_date,
-        supplier_id: newConta.supplier_id || null,
-        payment_method_id: newConta.payment_method_id || null,
-        observacoes: newConta.observacoes || "",
-      }).eq("id", newConta.id);
-
-      if (error) {
-        toast({ title: "Erro ao atualizar conta", description: error.message, variant: "destructive" });
-      } else {
-        toast({ title: "Conta atualizada com sucesso!" });
-        setIsDialogOpen(false);
-        setEditandoConta(false);
-        fetchInitialData();
-      }
+    if (error) {
+      toast({
+        title: "Erro ao excluir lançamento",
+        description: error.message,
+        variant: "destructive",
+      });
     } else {
-      const { error } = await supabase.from(tableName).insert([{
-        description: newConta.description,
-        value: newConta.value,
-        due_date: newConta.due_date,
-        company_id: newConta.company_id,
-        supplier_id: newConta.supplier_id || null,
-        payment_method_id: newConta.payment_method_id || null,
-        status: "Pendente",
-        origem: "Manual",
-      }]);
-
-      if (error) {
-        toast({ title: "Erro ao adicionar conta", description: error.message, variant: "destructive" });
-      } else {
-        toast({ title: "Conta adicionada com sucesso!" });
-        setIsDialogOpen(false);
-        fetchInitialData();
-      }
+      toast({ title: "Lançamento excluído!" });
+      fetchData();
     }
   };
 
   return (
-    <div className="space-y-6">
-      <div className="bg-card p-4 rounded-xl shadow-md border">
-        <h1 className="text-2xl font-bold mb-4">Gestão Financeira</h1>
-
-        <div className="flex justify-end gap-2">
-          <Button
-            onClick={() => {
-              setNewConta({ description: "", value: "", due_date: "", company_id: "" });
-              setEditandoConta(false);
-              setIsDialogOpen(true);
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" /> Nova Conta
-          </Button>
-        </div>
+    <div className="p-6 space-y-6">
+      <div className="flex gap-3 border-b">
+        <button
+          onClick={() => setActiveTab("pagar")}
+          className={`px-4 py-2 font-semibold ${
+            activeTab === "pagar"
+              ? "border-b-2 border-primary text-primary"
+              : "text-muted-foreground"
+          }`}
+        >
+          Contas a Pagar
+        </button>
+        <button
+          onClick={() => setActiveTab("receber")}
+          className={`px-4 py-2 font-semibold ${
+            activeTab === "receber"
+              ? "border-b-2 border-primary text-primary"
+              : "text-muted-foreground"
+          }`}
+        >
+          Contas a Receber
+        </button>
       </div>
 
-      {/* TABELA */}
-      <div className="bg-card rounded-xl shadow-md border overflow-hidden">
-        <div className="p-2 bg-muted/50 flex gap-2">
-          <button
-            onClick={() => setActiveTab("pagar")}
-            className={`px-4 py-2 rounded-lg font-semibold text-sm ${activeTab === "pagar" ? "bg-white shadow" : "text-muted-foreground hover:bg-white/50"}`}
-          >
-            Contas a Pagar
-          </button>
-        </div>
+      <div className="flex gap-3 items-center">
+        <label>Empresa:</label>
+        <select
+          className="border p-2 rounded-md"
+          value={selectedCompany || ""}
+          onChange={(e) => setSelectedCompany(e.target.value)}
+        >
+          {allowedCompanies.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="p-3 text-left">Descrição</th>
-                <th className="p-3 text-left">Fornecedor</th>
-                <th className="p-3 text-right">Valor</th>
-                <th className="p-3 text-center">Vencimento</th>
-                <th className="p-3 text-center">Status</th>
-                <th className="p-3 text-center">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan="6" className="text-center p-6">Carregando...</td></tr>
-              ) : contasPagar.map((c) => (
-                <tr key={c.id} className="border-b">
-                  <td className="p-3 font-semibold">{c.description}</td>
-                  <td className="p-3">{formatSupplierDisplay(c.supplier)}</td>
-                  <td className="p-3 text-right">{toBRL(c.value)}</td>
-                  <td className="p-3 text-center">{dateBR(c.due_date)}</td>
-                  <td className="p-3 text-center">{c.status}</td>
-                  <td className="p-3 text-center space-x-2">
-                    <Button size="sm" variant="outline" onClick={() => editarConta(c)}>
-                      <Edit className="w-4 h-4" /> Editar
-                    </Button>
-                    {c.status !== "Paga" && (
-                      <Button size="sm" variant="outline" onClick={() => abrirModalPagamento(c)}>
-                        <DollarSign className="w-4 h-4" /> Pagar
+      {loading ? (
+        <div className="flex justify-center py-10">
+          <Loader2 className="animate-spin w-6 h-6" />
+        </div>
+      ) : data.length === 0 ? (
+        <p className="text-muted-foreground">Nenhum lançamento encontrado.</p>
+      ) : (
+        <AnimatePresence>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="space-y-3"
+          >
+            {data.map((item) => (
+              <div
+                key={item.id}
+                className="border rounded-lg p-4 flex justify-between items-center"
+              >
+                <div>
+                  <p className="font-semibold">{item.description}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Vencimento:{" "}
+                    {item.due_date
+                      ? new Date(item.due_date).toLocaleDateString("pt-BR")
+                      : "-"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Valor:{" "}
+                    {item.value?.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}
+                  </p>
+                  {item.payment_date && (
+                    <p className="text-xs text-green-700 mt-1">
+                      Pago em:{" "}
+                      {new Date(item.payment_date).toLocaleDateString("pt-BR")}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex gap-2 items-center">
+                  {item.status === "paid" || item.status === "received" ? (
+                    <span className="text-green-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-4 h-4" />{" "}
+                      {activeTab === "pagar" ? "Pago" : "Recebido"}
+                    </span>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        className={
+                          activeTab === "pagar"
+                            ? "bg-red-500 hover:bg-red-600 text-white"
+                            : "bg-green-500 hover:bg-green-600 text-white"
+                        }
+                        onClick={() => handleStatus(item)}
+                      >
+                        <DollarSign className="w-4 h-4 mr-1" />
+                        {activeTab === "pagar" ? "Pagar" : "Receber"}
                       </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => excluirConta(c)}
-                    >
-                      <Trash2 className="w-4 h-4" /> Excluir
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
-      {/* MODAL NOVA/EDITAR */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editandoConta ? "Editar Conta" : "Nova Conta"}</DialogTitle>
-          </DialogHeader>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleEdit(item)}
+                      >
+                        ✏️ Editar
+                      </Button>
 
-          <div className="space-y-3 py-2">
-            <Input placeholder="Descrição" value={newConta.description} onChange={(e) => setNewConta((p) => ({ ...p, description: e.target.value }))} />
-            <Input type="number" placeholder="Valor" value={newConta.value} onChange={(e) => setNewConta((p) => ({ ...p, value: e.target.value }))} />
-            <Input type="date" value={newConta.due_date} onChange={(e) => setNewConta((p) => ({ ...p, due_date: e.target.value }))} />
-
-            <select className="w-full p-2 border rounded" value={newConta.company_id} onChange={(e) => setNewConta((p) => ({ ...p, company_id: e.target.value }))}>
-              <option value="">Selecione a empresa</option>
-              {allowedCompanies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-
-            <select className="w-full p-2 border rounded" value={newConta.supplier_id || ""} onChange={(e) => setNewConta((p) => ({ ...p, supplier_id: e.target.value }))}>
-              <option value="">Fornecedor</option>
-              {suppliers.map((s) => <option key={s.id} value={s.id}>{formatSupplierDisplay(s)}</option>)}
-            </select>
-
-            <Input placeholder="Observações" value={newConta.observacoes || ""} onChange={(e) => setNewConta((p) => ({ ...p, observacoes: e.target.value }))} />
-          </div>
-
-          <DialogFooter>
-            <Button onClick={handleSaveConta}>
-              <Save className="mr-2 h-4 w-4" /> {editandoConta ? "Salvar Alterações" : "Salvar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* MODAL PAGAMENTO */}
-      <Dialog open={showPagamentoModal} onOpenChange={setShowPagamentoModal}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Registrar Pagamento</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label>Banco</Label>
-              <select className="w-full p-2 border rounded" value={bancoSelecionado} onChange={(e) => setBancoSelecionado(e.target.value)}>
-                <option value="">Selecione o banco</option>
-                {bancos.map((b) => (
-                  <option key={b.id} value={b.id}>{b.nome}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <Label>Data do Pagamento</Label>
-              <Input type="date" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
-            </div>
-            <div>
-              <Label>Valor Pago</Label>
-              <Input type="number" value={valorPago} onChange={(e) => setValorPago(e.target.value)} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={confirmarPagamento}>Confirmar Pagamento</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleDelete(item)}
+                      >
+                        🗑️ Excluir
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </motion.div>
+        </AnimatePresence>
+      )}
     </div>
   );
 };

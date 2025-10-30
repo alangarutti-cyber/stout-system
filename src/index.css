@@ -1,17 +1,120 @@
-@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap");
-
-/* Tailwind base config */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* === Reset global simples === */
-* {
-  @apply border-gray-200;
+/* === Tema Claro (Stout Clean) === */
+:root {
+  --background: #f9f9f9;
+  --foreground: #111827;
+  --card: #ffffff;
+  --card-foreground: #111827;
+  --primary: #ff6600;
+  --primary-foreground: #ffffff;
+  --accent: #ff8547;
+  --muted: #f3f4f6;
+  --muted-foreground: #6b7280;
+  --border: #e5e7eb;
 }
 
-/* === Fundo e fonte padrão === */
-body {
-  @apply bg-white text-gray-900 antialiased;
-  font-family: 'Poppins', sans-serif;
+/* === Tema Escuro (Stout Pro Dark) === */
+.dark {
+  --background: #121417; /* fundo principal */
+  --foreground: #f3f4f6; /* texto */
+  --card: #1e2126; /* blocos e cartões */
+  --card-foreground: #f1f1f1;
+  --primary: #ff6600;
+  --primary-foreground: #ffffff;
+  --accent: #ff8547;
+  --muted: #23262b;
+  --muted-foreground: #b8b9bb;
+  --border: #2c2f35;
+}
+
+/* === Corpo base === */
+body, html {
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
+  min-height: 100vh;
+  transition: background-color 0.4s ease, color 0.4s ease;
+  font-family: 'Inter', sans-serif;
+}
+
+/* === Containers principais === */
+main, .main-content, .app-container {
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
+}
+
+/* === Cards === */
+.card, .bg-white, .bg-background {
+  background-color: var(--card) !important;
+  color: var(--card-foreground) !important;
+  border-color: var(--border) !important;
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+/* === Botões === */
+.btn-primary {
+  @apply bg-primary text-primary-foreground font-semibold px-4 py-2 rounded-xl shadow-soft transition-all duration-300;
+}
+.btn-primary:hover {
+  box-shadow: 0 0 15px rgba(255, 102, 0, 0.45);
+}
+
+.btn-outline {
+  @apply border border-[var(--border)] text-[var(--foreground)] px-4 py-2 rounded-lg hover:bg-[var(--muted)] transition-colors duration-300;
+}
+
+/* === Sidebar e Cabeçalhos === */
+aside {
+  background-color: var(--card);
+  border-right: 1px solid var(--border);
+}
+.dark aside {
+  background: linear-gradient(180deg, #1b1d22 0%, #17191d 100%);
+  border-right: 1px solid var(--border);
+}
+
+/* === Textos e links === */
+.text-muted {
+  color: var(--muted-foreground);
+}
+a {
+  color: var(--primary);
+  transition: color 0.3s;
+}
+a:hover {
+  color: var(--accent);
+}
+
+/* === Inputs e selects === */
+input, select, textarea {
+  background-color: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+/* === Scrollbar === */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* === Transições suaves no dark === */
+.dark * {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }

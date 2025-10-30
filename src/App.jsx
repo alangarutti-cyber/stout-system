@@ -1,4 +1,3 @@
-// src/App.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import { HashRouter as Router, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { Helmet } from "react-helmet";
@@ -10,17 +9,17 @@ import { UserProvider, useUser } from "@/contexts/UserContext";
 
 // === Telas principais ===
 import LoginScreen from "@/components/LoginScreen";
-import MainLayout from "@/components/layout/MainLayout";
+import MainLayout from "@/components/layout/MainLayout"; // ✅ caminho corrigido
 import InitialSetup from "@/components/InitialSetup";
 import AdminCreation from "@/components/AdminCreation";
 
-// === Módulos ===
+// === Módulos reais ===
 import Dashboard from "@/components/modules/Dashboard";
 import DRE from "@/components/modules/DRE";
 import Estoque from "@/components/modules/Estoque";
 import Caixa from "@/components/modules/Caixa";
 import Financeiro from "@/components/modules/Financeiro";
-import Pagamentos from "@/components/modules/Pagamentos"; // ✅ corrigido
+import Pagamentos from "@/components/modules/Pagamentos";
 import Fornecedores from "@/components/modules/Fornecedores";
 import Funcionarios from "@/components/modules/Funcionarios";
 import Empresas from "@/components/modules/Empresas";
@@ -28,10 +27,23 @@ import Conferencia from "@/components/modules/Conferencia";
 import Bancos from "@/components/modules/Bancos";
 import SaudeFinanceira from "@/components/modules/SaudeFinanceira";
 import PainelExecutivo from "@/components/modules/PainelExecutivo";
-import CashClosingDashboard from "@/components/modules/CashClosingDashboard"; // ✅ ajustado
+import CashClosingDashboard from "@/components/modules/CashClosingDashboard";
 import Relatorios from "@/components/modules/Relatorios";
 import Configuracoes from "@/components/modules/Configuracoes";
-import Pedidos from "@/components/modules/Pedidos"; // ✅ módulo integrado
+import Pedidos from "@/components/modules/Pedidos";
+
+// === Placeholders de rotas financeiras ===
+import {
+  ContasPagar,
+  ContasReceber,
+  ContaCorrenteFiado,
+  Recebimentos,
+  ResumoFinanceiro,
+  DRESimplificado,
+  Categorias,
+  FormasPagamento,
+  MeuNegocio,
+} from "@/routesPlaceholders";
 
 // === Controle de Setup Inicial ===
 const AppContent = () => {
@@ -49,8 +61,6 @@ const AppContent = () => {
   useEffect(() => {
     const checkInitialState = async () => {
       try {
-        console.log("🔍 Checando configuração inicial...");
-
         const { count: companiesCount, error: companyError } = await supabase
           .from("companies")
           .select("id", { count: "exact", head: true });
@@ -61,8 +71,6 @@ const AppContent = () => {
           .select("id", { count: "exact", head: true })
           .eq("is_admin", true);
         if (adminError) throw adminError;
-
-        console.log(`🏢 Empresas: ${companiesCount} | 👤 Admins: ${adminCount}`);
 
         if ((companiesCount ?? 0) > 0 && (adminCount ?? 0) > 0) {
           setInitialState({ isSetupComplete: true, hasAdmin: true, loading: false });
@@ -134,7 +142,7 @@ const UserDataLoader = ({ children }) => {
     try {
       const { data: appUser } = await supabase
         .from("app_users")
-        .select("*") // ✅ Simplificado para evitar erro de relação
+        .select("*")
         .eq("uuid", currentAuthUser.id)
         .single();
 
@@ -198,18 +206,25 @@ function App() {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<ModuleWrapper component={Dashboard} />} />
 
-              {/* === Financeiro === */}
+              {/* === Financeiro (módulos placeholders novos) === */}
+              <Route path="contas-pagar" element={<ContasPagar />} />
+              <Route path="contas-receber" element={<ContasReceber />} />
+              <Route path="conta-corrente" element={<ContaCorrenteFiado />} />
+              <Route path="recebimentos" element={<Recebimentos />} />
+              <Route path="resumo-financeiro" element={<ResumoFinanceiro />} />
+              <Route path="dre-simplificado" element={<DRESimplificado />} />
+              <Route path="categorias" element={<Categorias />} />
+              <Route path="formas-pagamento" element={<FormasPagamento />} />
+              <Route path="meu-negocio" element={<MeuNegocio />} />
+
+              {/* === Módulos reais === */}
               <Route path="dre" element={<ModuleWrapper component={DRE} />} />
               <Route path="caixa" element={<ModuleWrapper component={Caixa} />} />
               <Route path="financeiro" element={<ModuleWrapper component={Financeiro} />} />
               <Route path="bancos" element={<ModuleWrapper component={Bancos} />} />
               <Route path="pagamentos" element={<ModuleWrapper component={Pagamentos} />} />
               <Route path="conferencia" element={<ModuleWrapper component={Conferencia} />} />
-
-              {/* === Operacional === */}
-              <Route path="pedidos" element={<ModuleWrapper component={Pedidos} />} /> {/* ✅ Novo módulo Pedidos */}
-
-              {/* === Cadastros / Configurações === */}
+              <Route path="pedidos" element={<ModuleWrapper component={Pedidos} />} />
               <Route path="fornecedores" element={<ModuleWrapper component={Fornecedores} />} />
               <Route path="funcionarios" element={<ModuleWrapper component={Funcionarios} />} />
               <Route path="empresas" element={<ModuleWrapper component={Empresas} />} />
