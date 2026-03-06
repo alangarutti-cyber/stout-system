@@ -1,9 +1,17 @@
 import React, { forwardRef } from "react";
-import logo from "@/assets/LogoStoutBurger.png";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import "dayjs/locale/pt-br";
+
+// Tentativa segura de importação do logo
+let logo;
+try {
+  logo = require("@/assets/LogoStoutBurger.png");
+} catch (err) {
+  console.warn("⚠️ Logo não encontrado em '@/assets/LogoStoutBurger.png'");
+  logo = null;
+}
 
 // Configurações do Day.js
 dayjs.extend(utc);
@@ -51,11 +59,26 @@ const PrintablePedidos = forwardRef(({ order }, ref) => {
           marginBottom: "8px",
         }}
       >
-        <img
-          src={logo}
-          alt="Logo Stout Burger"
-          style={{ height: "38px", opacity: 0.9 }}
-        />
+        {logo ? (
+          <img
+            src={logo}
+            alt="Logo Stout Burger"
+            style={{ height: "38px", opacity: 0.9 }}
+          />
+        ) : (
+          <div
+            style={{
+              height: "38px",
+              display: "flex",
+              alignItems: "center",
+              fontWeight: "bold",
+              color: "#C8102E",
+            }}
+          >
+            STOUT SYSTEM
+          </div>
+        )}
+
         <div style={{ textAlign: "right", lineHeight: "1.4" }}>
           <h2 style={{ fontSize: "14px", margin: 0 }}>
             Pedido de Insumos #{order.id}
@@ -104,10 +127,14 @@ const PrintablePedidos = forwardRef(({ order }, ref) => {
                 <th style={{ padding: "3px 6px", width: "45%" }}>Produto</th>
                 <th style={{ padding: "3px 6px", width: "10%" }}>Qtd</th>
                 <th style={{ padding: "3px 6px", width: "10%" }}>Unid.</th>
-                <th style={{ padding: "3px 6px", width: "15%", textAlign: "right" }}>
+                <th
+                  style={{ padding: "3px 6px", width: "15%", textAlign: "right" }}
+                >
                   Vl. Unit.
                 </th>
-                <th style={{ padding: "3px 6px", width: "20%", textAlign: "right" }}>
+                <th
+                  style={{ padding: "3px 6px", width: "20%", textAlign: "right" }}
+                >
                   Vl. Total
                 </th>
               </tr>

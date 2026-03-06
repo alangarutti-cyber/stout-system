@@ -1,10 +1,18 @@
+// src/main.jsx
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App"; // sem alias aqui, caminho direto
-import "./index.css";
+import App from "./App";
+import { BrowserRouter } from "react-router-dom";
+import { AuthProvider } from "@/contexts/SupabaseAuthContext";
+import { Toaster } from "@/components/ui/toaster";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    <BrowserRouter>
+      <AuthProvider>
+        <App />
+        <Toaster />
+      </AuthProvider>
+    </BrowserRouter>
   </React.StrictMode>
 );

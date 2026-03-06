@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -15,26 +15,16 @@ import {
   Truck,
   ShoppingBag,
   Package,
-  LineChart, // ✅ substitui o antigo ChartLine
+  LineChart,
   Building2,
-  Boxes,
-  Calendar,
-  Layers,
-  Zap,
   ArrowLeftRight,
   ChevronLeft,
   ChevronRight,
+  Factory,
 } from "lucide-react";
 
 const Sidebar = () => {
-  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
-
-  // Recolhe automaticamente em telas pequenas
-  const handleNavigate = (to) => {
-    navigate(to);
-    if (window.innerWidth <= 1024) setCollapsed(true);
-  };
 
   const sections = [
     {
@@ -49,6 +39,7 @@ const Sidebar = () => {
       title: "Financeiro",
       items: [
         { label: "Lançamentos", icon: DollarSign, to: "/financeiro" },
+        { label: "Financeiro Produção", icon: Factory, to: "/financeiro-producao" },
         { label: "Fechamento de Caixa", icon: CreditCard, to: "/caixa" },
         { label: "Bancos", icon: Banknote, to: "/bancos" },
         { label: "Conferência", icon: CheckSquare, to: "/conferencia" },
@@ -81,7 +72,6 @@ const Sidebar = () => {
       transition={{ duration: 0.25, ease: "easeInOut" }}
       className="bg-white border-r shadow-sm flex flex-col h-screen fixed md:relative z-40"
     >
-      {/* Cabeçalho da Sidebar */}
       <div className="px-4 py-3 border-b flex items-center justify-between">
         <AnimatePresence>
           {!collapsed && (
@@ -95,6 +85,7 @@ const Sidebar = () => {
             </motion.span>
           )}
         </AnimatePresence>
+
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="p-1 text-muted-foreground hover:text-primary transition"
@@ -103,10 +94,9 @@ const Sidebar = () => {
         </button>
       </div>
 
-      {/* Menu Navegação */}
       <nav className="flex-1 overflow-y-auto py-3">
-        {sections.map((section, idx) => (
-          <div key={idx} className="mb-4">
+        {sections.map((section) => (
+          <div key={section.title} className="mb-4">
             <AnimatePresence>
               {!collapsed && (
                 <motion.p
@@ -120,35 +110,34 @@ const Sidebar = () => {
               )}
             </AnimatePresence>
 
-            {section.items.map(({ label, icon: Icon, to }) => {
-              const isActive = window.location.hash.includes(to);
-              return (
-                <motion.button
-                  key={label}
-                  onClick={() => handleNavigate(to)}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className={`flex items-center gap-3 w-full px-5 py-2.5 text-sm font-medium rounded-r-full transition-all ${
-                    isActive
-                      ? "bg-primary text-white"
-                      : "text-muted-foreground hover:bg-muted/40 hover:text-primary"
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <AnimatePresence>
-                    {!collapsed && (
-                      <motion.span
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                      >
-                        {label}
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </motion.button>
-              );
-            })}
+            {section.items.map(({ label, icon: Icon, to }) => (
+              <NavLink key={label} to={to}>
+                {({ isActive }) => (
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`flex items-center gap-3 w-full px-5 py-2.5 text-sm font-medium rounded-r-full transition-all cursor-pointer ${
+                      isActive
+                        ? "bg-primary text-white"
+                        : "text-muted-foreground hover:bg-muted/40 hover:text-primary"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <AnimatePresence>
+                      {!collapsed && (
+                        <motion.span
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                        >
+                          {label}
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                )}
+              </NavLink>
+            ))}
           </div>
         ))}
       </nav>
