@@ -3,21 +3,30 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { Toaster } from "@/components/ui/toaster";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 
+// Layout principal
 import MainLayout from "@/components/layout/MainLayout";
 
+// Telas principais
 import Dashboard from "@/components/modules/Dashboard";
+import Caixa from "@/components/modules/Caixa";
 import DRE from "@/components/modules/DRE";
 import Configuracoes from "@/components/modules/Configuracoes";
 import Relatorios from "@/components/modules/Relatorios";
 import FinanceiroProducao from "@/components/modules/FinanceiroProducao";
 
+// Cadastros
 import Clientes from "@/components/modules/cadastros/Clientes";
 import Colaboradores from "@/components/modules/cadastros/Colaboradores";
 import Produtos from "@/components/modules/cadastros/Produtos";
 import Empresas from "@/components/modules/cadastros/Empresas";
 
+// Financeiro
 import Financeiro from "@/components/financeiro/Financeiro";
+
+// Fechamento
 import CashClosingModern from "@/components/modules/CashClosingModern";
+
+// Login
 import LoginScreen from "@/components/LoginScreen";
 
 const PlaceholderPage = ({ title }) => {
@@ -69,22 +78,26 @@ const App = () => {
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
 
+          {/* PRINCIPAIS */}
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="saude-financeira" element={<PlaceholderPage title="Saúde Financeira" />} />
-          <Route path="caixa" element={<PlaceholderPage title="Caixa" />} />
+          <Route path="caixa" element={<Caixa />} />
           <Route path="dre" element={<DRE />} />
           <Route path="configuracoes" element={<Configuracoes />} />
           <Route path="relatorios" element={<Relatorios />} />
 
+          {/* CADASTROS */}
           <Route path="cadastros/clientes" element={<Clientes />} />
           <Route path="cadastros/colaboradores" element={<Colaboradores />} />
           <Route path="cadastros/produtos" element={<Produtos />} />
           <Route path="cadastros/empresas" element={<Empresas />} />
 
+          {/* ATALHOS DO MENU */}
           <Route path="empresas" element={<Empresas />} />
           <Route path="funcionarios" element={<Colaboradores />} />
           <Route path="fornecedores" element={<PlaceholderPage title="Fornecedores" />} />
 
+          {/* FINANCEIRO */}
           <Route path="financeiro" element={<Financeiro />} />
           <Route path="financeiro-producao" element={<FinanceiroProducao />} />
           <Route
@@ -95,6 +108,7 @@ const App = () => {
           <Route path="conferencia" element={<PlaceholderPage title="Conferência" />} />
           <Route path="cobrancas" element={<PlaceholderPage title="Cobranças" />} />
 
+          {/* OPERAÇÕES */}
           <Route path="producao" element={<PlaceholderPage title="Produção" />} />
           <Route path="pedidos" element={<PlaceholderPage title="Pedidos" />} />
           <Route path="checklists" element={<PlaceholderPage title="Checklists" />} />
