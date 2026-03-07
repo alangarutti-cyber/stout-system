@@ -1,4 +1,3 @@
-// ✅ src/contexts/SupabaseAuthContext.jsx
 import React, {
   createContext,
   useContext,
@@ -18,83 +17,107 @@ export const AuthProvider = ({ children }) => {
   const [authUser, setAuthUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const handleSession = useCallback(
-    async (currentSession) => {
+  const syncAppUser = useCallback(
+    async (user) => {
+      if (!user) return;
+
       try {
-        console.log("🔑 Sessão recebida:", currentSession);
-        setSession(currentSession);
-        setAuthUser(currentSession?.user ?? null);
+        const { data: appUser, error: appUserError } = await supabase
+          .from("app_users")
+          .select("id")
+          .eq("uuid", user.id)
+          .maybeSingle();
 
-        if (currentSession?.user) {
-          const { data: appUser, error: appUserError } = await supabase
-            .from("app_users")
-            .select("id")
-            .eq("uuid", currentSession.user.id)
-            .maybeSingle();
+        if (appUserError) {
+          console.error("Erro ao consultar app_users:", appUserError);
+          return;
+        }
 
-          if (!appUser && !appUserError) {
-            const { error: insertError } = await supabase.from("app_users").insert({
-              uuid: currentSession.user.id,
-              name:
-                currentSession.user.user_metadata?.name ||
-                currentSession.user.email,
-              email: currentSession.user.email,
-              username: currentSession.user.email,
-              password: "password_placeholder",
+        if (!appUser) {
+          const { error: insertError } = await supabase.from("app_users").insert({
+            uuid: user.id,
+            name: user.user_metadata?.name || user.email,
+            email: user.email,
+            username: user.email,
+            password: "password_placeholder",
+          });
+
+          if (insertError) {
+            console.error("Erro ao criar perfil em app_users:", insertError);
+            toast({
+              variant: "destructive",
+              title: "Erro ao sincronizar perfil",
+              description: insertError.message,
             });
-
-            if (insertError) {
-              console.error("❌ Erro ao criar perfil:", insertError);
-              toast({
-                variant: "destructive",
-                title: "Erro ao criar perfil",
-                description: insertError.message,
-              });
-            } else {
-              console.log("✅ Usuário sincronizado com app_users");
-            }
+          } else {
+            console.log("Usuário sincronizado com app_users");
           }
         }
       } catch (err) {
-        console.error("⚠️ Erro em handleSession:", err);
-      } finally {
-        setLoading(false);
+        console.error("Erro inesperado ao sincronizar app_users:", err);
       }
     },
     [toast]
   );
 
+  const applySession = useCallback((currentSession) => {
+    console.log("Sessão recebida:", currentSession);
+    setSession(currentSession);
+    setAuthUser(currentSession?.user ?? null);
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
-    const getSession = async () => {
+    let mounted = true;
+
+    const bootstrap = async () => {
       try {
-        const { data, error } = await supabase.auth.getSession();
+        const {
+          data: { session: currentSession },
+          error,
+        } = await supabase.auth.getSession();
+
         if (error) throw error;
-        await handleSession(data.session);
+        if (!mounted) return;
+
+        applySession(currentSession);
+
+        if (currentSession?.user) {
+          syncAppUser(currentSession.user);
+        }
       } catch (err) {
-        console.warn("⚠️ Erro ao obter sessão:", err.message);
-        await handleSession(null);
+        console.error("Erro ao obter sessão:", err);
+        if (!mounted) return;
+        applySession(null);
       }
     };
 
-    getSession();
+    bootstrap();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("🌀 Evento de autenticação:", event);
-      if (event === "SIGNED_OUT") {
-        await handleSession(null);
-      } else if (session) {
-        await handleSession(session);
+    } = supabase.auth.onAuthStateChange((event, currentSession) => {
+      console.log("Evento de autenticação:", event);
+
+      if (!mounted) return;
+
+      applySession(currentSession);
+
+      if (currentSession?.user) {
+        syncAppUser(currentSession.user);
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, [handleSession]);
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe();
+    };
+  }, [applySession, syncAppUser]);
 
   const signUp = useCallback(
     async (email, password) => {
       const { data, error } = await supabase.auth.signUp({ email, password });
+
       if (error) {
         toast({
           variant: "destructive",
@@ -107,6 +130,7 @@ export const AuthProvider = ({ children }) => {
           description: "Verifique seu e-mail para confirmar o acesso.",
         });
       }
+
       return { data, error };
     },
     [toast]
@@ -115,6 +139,7 @@ export const AuthProvider = ({ children }) => {
   const signIn = useCallback(
     async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
+
       if (error) {
         toast({
           variant: "destructive",
@@ -122,6 +147,7 @@ export const AuthProvider = ({ children }) => {
           description: error.message,
         });
       }
+
       return { error };
     },
     [toast]
@@ -129,6 +155,7 @@ export const AuthProvider = ({ children }) => {
 
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
+
     if (error) {
       toast({
         variant: "destructive",
