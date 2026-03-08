@@ -1,68 +1,52 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 
-// Layout principal
 import MainLayout from "@/components/layout/MainLayout";
 
-// Telas principais
 import Dashboard from "@/components/modules/Dashboard";
 import Caixa from "@/components/modules/Caixa";
 import DRE from "@/components/modules/DRE";
 import Configuracoes from "@/components/modules/Configuracoes";
 import Relatorios from "@/components/modules/Relatorios";
-import FinanceiroProducao from "@/components/modules/FinanceiroProducao";
 
-// Cadastros
+import SaudeFinanceira from "@/components/modules/SaudeFinanceira";
+import PainelExecutivo from "@/components/modules/PainelExecutivo";
+import Pedidos from "@/components/modules/Pedidos";
+
 import Clientes from "@/components/modules/cadastros/Clientes";
 import Colaboradores from "@/components/modules/cadastros/Colaboradores";
 import Produtos from "@/components/modules/cadastros/Produtos";
 import Empresas from "@/components/modules/cadastros/Empresas";
 
-// Financeiro
 import Financeiro from "@/components/financeiro/Financeiro";
-
-// Fechamento
 import CashClosingModern from "@/components/modules/CashClosingModern";
 
-// Login
 import LoginScreen from "@/components/LoginScreen";
-
-const PlaceholderPage = ({ title }) => {
-  return (
-    <div className="p-6">
-      <div className="bg-white rounded-2xl border shadow-sm p-6">
-        <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
-        <p className="text-sm text-muted-foreground mt-2">
-          Página em preparação no sistema.
-        </p>
-      </div>
-    </div>
-  );
-};
 
 const ProtectedRoute = ({ children }) => {
   const { authUser, loading } = useAuth();
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen text-gray-500">
-        Carregando...
+      <div className="flex flex-col items-center justify-center min-h-screen text-gray-500">
+        <p className="animate-pulse">Inicializando autenticação...</p>
+        <small className="text-muted-foreground mt-2">
+          Verificando sessão do usuário...
+        </small>
       </div>
     );
   }
 
-  if (!authUser) {
-    return <Navigate to="/login" replace />;
-  }
+  if (!authUser) return <Navigate to="/login" replace />;
 
   return children;
 };
 
 const App = () => {
   return (
-    <Router>
+    <>
       <Toaster />
 
       <Routes>
@@ -76,15 +60,22 @@ const App = () => {
             </ProtectedRoute>
           }
         >
+          {/* REDIRECT */}
           <Route index element={<Navigate to="/dashboard" replace />} />
 
-          {/* PRINCIPAIS */}
+          {/* PRINCIPAL */}
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="saude-financeira" element={<PlaceholderPage title="Saúde Financeira" />} />
+          <Route path="saude-financeira" element={<SaudeFinanceira />} />
+          <Route path="painel-executivo" element={<PainelExecutivo />} />
+
+          {/* OPERACIONAL */}
           <Route path="caixa" element={<Caixa />} />
+          <Route path="fechamento" element={<CashClosingModern />} />
+          <Route path="pedidos" element={<Pedidos />} />
+
+          {/* FINANCEIRO */}
+          <Route path="financeiro/*" element={<Financeiro />} />
           <Route path="dre" element={<DRE />} />
-          <Route path="configuracoes" element={<Configuracoes />} />
-          <Route path="relatorios" element={<Relatorios />} />
 
           {/* CADASTROS */}
           <Route path="cadastros/clientes" element={<Clientes />} />
@@ -92,31 +83,14 @@ const App = () => {
           <Route path="cadastros/produtos" element={<Produtos />} />
           <Route path="cadastros/empresas" element={<Empresas />} />
 
-          {/* ATALHOS DO MENU */}
-          <Route path="empresas" element={<Empresas />} />
-          <Route path="funcionarios" element={<Colaboradores />} />
-          <Route path="fornecedores" element={<PlaceholderPage title="Fornecedores" />} />
-
-          {/* FINANCEIRO */}
-          <Route path="financeiro" element={<Financeiro />} />
-          <Route path="financeiro-producao" element={<FinanceiroProducao />} />
-          <Route
-            path="financeiro/fechamento"
-            element={<CashClosingModern pageTitle="Fechamento de Caixa" />}
-          />
-          <Route path="bancos" element={<PlaceholderPage title="Bancos" />} />
-          <Route path="conferencia" element={<PlaceholderPage title="Conferência" />} />
-          <Route path="cobrancas" element={<PlaceholderPage title="Cobranças" />} />
-
-          {/* OPERAÇÕES */}
-          <Route path="producao" element={<PlaceholderPage title="Produção" />} />
-          <Route path="pedidos" element={<PlaceholderPage title="Pedidos" />} />
-          <Route path="checklists" element={<PlaceholderPage title="Checklists" />} />
+          {/* SISTEMA */}
+          <Route path="configuracoes" element={<Configuracoes />} />
+          <Route path="relatorios" element={<Relatorios />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
-    </Router>
+    </>
   );
 };
 

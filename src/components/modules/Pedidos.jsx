@@ -38,70 +38,207 @@ const statusConfig = {
   Cancelado: { icon: XCircle, color: "text-red-500", bg: "bg-red-100" },
 };
 
-const Pedidos = ({ user, companies, userCompanyAccess }) => {
+const Pedidos = () => {
   const { toast } = useToast();
+
   const [activeTab, setActiveTab] = useState("criar");
+
+  const [authEmail, setAuthEmail] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
+
+  const [companies, setCompanies] = useState([]);
+  const [userCompanyAccess, setUserCompanyAccess] = useState([]);
   const [allowedCompanies, setAllowedCompanies] = useState([]);
+
   const [selectedCompany, setSelectedCompany] = useState("");
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0]);
+  const [orderDate, setOrderDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
   const [sentOrders, setSentOrders] = useState([]);
+
   const [loading, setLoading] = useState(false);
+  const [bootLoading, setBootLoading] = useState(true);
+
   const pdfRefs = useRef({});
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState(null);
 
-  // ===== Empresas acessíveis =====
-  useEffect(() => {
-    if (user && companies && userCompanyAccess) {
-      if (user.is_admin || user.role === "Super Administrador") {
-        setAllowedCompanies(companies);
-        if (companies.length > 0) setSelectedCompany(companies[0].id);
-      } else {
-        const userCompanyIds = userCompanyAccess
-          .filter((a) => a.user_id === user.id)
-          .map((a) => a.company_id);
-        const accessible = companies.filter((c) => userCompanyIds.includes(c.id));
-        setAllowedCompanies(accessible);
-        if (accessible.length > 0) setSelectedCompany(accessible[0].id);
-      }
-    }
-  }, [user, companies, userCompanyAccess]);
+  const loadSessionAndUser = useCallback(async () => {
+    try {
+      setBootLoading(true);
 
-  // ===== Buscar categorias =====
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+
+      const email = authUser?.email || "";
+      setAuthEmail(email);
+
+      if (!email) {
+        toast({
+          title: "Sessão não encontrada",
+          description: "Faça login novamente.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { data: appUser, error: userError } = await supabase
+        .from("app_users")
+        .select("*")
+        .eq("email", email)
+        .single();
+
+      if (userError || !appUser) {
+        toast({
+          title: "Usuário não encontrado",
+          description: userError?.message || "Não foi possível localizar o usuário.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setCurrentUser(appUser);
+
+      const { data: companiesData, error: companiesError } = await supabase
+        .from("companies")
+        .select("*")
+        .order("name", { ascending: true });
+
+      if (companiesError) {
+        toast({
+          title: "Erro ao buscar empresas",
+          description: companiesError.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setCompanies(companiesData || []);
+
+      const userIdCandidates = [appUser.id, appUser.uuid]
+        .filter(Boolean)
+        .map(String);
+
+      let accessRows = [];
+      if (userIdCandidates.length > 0) {
+        const { data: accessData, error: accessError } = await supabase
+          .from("user_company_access")
+          .select("*")
+          .or(userIdCandidates.map((id) => `user_id.eq.${id}`).join(","));
+
+        if (accessError) {
+          toast({
+            title: "Erro ao buscar acessos de empresa",
+            description: accessError.message,
+            variant: "destructive",
+          });
+        } else {
+          accessRows = accessData || [];
+        }
+      }
+
+      setUserCompanyAccess(accessRows);
+    } catch (error) {
+      toast({
+        title: "Erro ao iniciar módulo de pedidos",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setBootLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    loadSessionAndUser();
+  }, [loadSessionAndUser]);
+
+  useEffect(() => {
+    if (!currentUser || companies.length === 0) return;
+
+    if (currentUser.is_admin || currentUser.role === "Super Administrador") {
+      setAllowedCompanies(companies);
+      if (companies.length > 0 && !selectedCompany) {
+        setSelectedCompany(String(companies[0].id));
+      }
+      return;
+    }
+
+    const allowedCompanyUuids = new Set(
+      (userCompanyAccess || []).map((a) => String(a.company_id))
+    );
+
+    const filtered = companies.filter((company) =>
+      allowedCompanyUuids.has(String(company.uuid))
+    );
+
+    setAllowedCompanies(filtered);
+
+    if (filtered.length > 0 && !selectedCompany) {
+      setSelectedCompany(String(filtered[0].id));
+    }
+  }, [currentUser, companies, userCompanyAccess, selectedCompany]);
+
   const fetchCategories = useCallback(async () => {
     if (!selectedCompany) return;
+
+    const companyId = Number(selectedCompany);
+
     const { data, error } = await supabase.rpc("get_categories_for_company", {
-      p_company_id: selectedCompany,
+      p_company_id: companyId,
     });
-    if (error)
-      toast({ title: "Erro ao buscar categorias", variant: "destructive" });
-    else setCategories(data);
+
+    if (error) {
+      toast({
+        title: "Erro ao buscar categorias",
+        description: error.message,
+        variant: "destructive",
+      });
+      setCategories([]);
+    } else {
+      setCategories(data || []);
+    }
   }, [selectedCompany, toast]);
 
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
 
-  // ===== Buscar produtos =====
   const fetchProducts = useCallback(async () => {
     if (!selectedCompany || !selectedCategory) {
       setProducts([]);
       return;
     }
+
     setLoading(true);
+
+    const companyId = Number(selectedCompany);
+    const categoryId = Number(selectedCategory);
+
     const { data, error } = await supabase
       .from("products")
       .select("*, product_company_access!inner(*)")
-      .eq("category_id", selectedCategory)
-      .eq("product_company_access.company_id", selectedCompany)
-      .eq("is_active", true);
-    if (error)
-      toast({ title: "Erro ao buscar produtos", variant: "destructive" });
-    else setProducts(data);
+      .eq("category_id", categoryId)
+      .eq("product_company_access.company_id", companyId)
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+
+    if (error) {
+      toast({
+        title: "Erro ao buscar produtos",
+        description: error.message,
+        variant: "destructive",
+      });
+      setProducts([]);
+    } else {
+      setProducts(data || []);
+    }
+
     setLoading(false);
   }, [selectedCompany, selectedCategory, toast]);
 
@@ -109,44 +246,114 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
     fetchProducts();
   }, [fetchProducts]);
 
-  // ===== Buscar pedidos enviados =====
   const fetchSentOrders = useCallback(async () => {
+    if (!currentUser) return;
+
     setLoading(true);
+
     let query = supabase
       .from("supply_orders")
       .select(
-        `*, company:company_id (name, cnpj, address, phone),
-         user:user_id (name),
-         supply_order_items (*, products (*, product_categories (name)))`
+        `
+          *,
+          company:company_id (id, name, cnpj, address, phone),
+          user:user_id (id, name),
+          supply_order_items (
+            *,
+            products (
+              *,
+              product_categories (name)
+            )
+          )
+        `
       )
       .order("created_at", { ascending: false });
 
-    if (!user.is_admin && user.role !== "Super Administrador") {
-      const userCompanyIds = userCompanyAccess
-        .filter((a) => a.user_id === user.id)
-        .map((a) => a.company_id);
-      query = query.in("company_id", userCompanyIds);
+    if (!currentUser.is_admin && currentUser.role !== "Super Administrador") {
+      const allowedIds = allowedCompanies.map((c) => c.id);
+      if (allowedIds.length > 0) {
+        query = query.in("company_id", allowedIds);
+      } else {
+        setSentOrders([]);
+        setLoading(false);
+        return;
+      }
     }
 
     const { data, error } = await query;
+
     if (error) {
       toast({
         title: "Erro ao buscar pedidos enviados",
         description: error.message,
         variant: "destructive",
       });
+      setSentOrders([]);
     } else {
-      setSentOrders(data);
+      setSentOrders(data || []);
     }
+
     setLoading(false);
-  }, [toast, user, userCompanyAccess]);
+  }, [toast, currentUser, allowedCompanies]);
 
   useEffect(() => {
-    if (activeTab === "enviados") fetchSentOrders();
+    if (activeTab === "enviados") {
+      fetchSentOrders();
+    }
   }, [activeTab, fetchSentOrders]);
 
-  // ===== Criar pedido =====
+  const handleQuantityChange = (product, qty) => {
+    const quantity = parseFloat(qty) || 0;
+
+    setCart((prev) => {
+      const exists = prev.find((i) => i.id === product.id);
+
+      if (exists) {
+        if (quantity <= 0) {
+          return prev.filter((i) => i.id !== product.id);
+        }
+
+        return prev.map((i) =>
+          i.id === product.id
+            ? {
+                ...i,
+                quantity,
+                ordered_quantity: quantity,
+                total_cost: quantity * (i.unit_cost || 0),
+              }
+            : i
+        );
+      }
+
+      if (quantity <= 0) return prev;
+
+      return [
+        ...prev,
+        {
+          ...product,
+          quantity,
+          ordered_quantity: quantity,
+          unit_cost: product.cost_price || 0,
+          total_cost: quantity * (product.cost_price || 0),
+          ordered_unit: product.unit,
+        },
+      ];
+    });
+  };
+
+  const removeFromCart = (id) => {
+    setCart((prev) => prev.filter((p) => p.id !== id));
+  };
+
   const handleSendOrder = async () => {
+    if (!currentUser) {
+      toast({
+        title: "Usuário não carregado",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (cart.length === 0 || !selectedCompany) {
       toast({
         title: "Pedido vazio ou empresa não selecionada",
@@ -154,12 +361,16 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
       });
       return;
     }
+
     setLoading(true);
+
+    const companyId = Number(selectedCompany);
+
     const { data: orderData, error: orderError } = await supabase
       .from("supply_orders")
       .insert({
-        company_id: selectedCompany,
-        user_id: user.id,
+        company_id: companyId,
+        user_id: currentUser.id,
         order_date: orderDate,
         status: "Pendente",
       })
@@ -196,55 +407,28 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
         description: itemsError.message,
         variant: "destructive",
       });
+
       await supabase.from("supply_orders").delete().eq("id", orderData.id);
-    } else {
-      await supabase
-        .from("supply_order_history")
-        .insert({ order_id: orderData.id, user_id: user.id, status: "Pendente" });
-      toast({ title: "Pedido enviado com sucesso!" });
-      setCart([]);
+      setLoading(false);
+      return;
     }
+
+    await supabase.from("supply_order_history").insert({
+      order_id: orderData.id,
+      user_id: currentUser.id,
+      status: "Pendente",
+    });
+
+    toast({ title: "Pedido enviado com sucesso!" });
+    setCart([]);
+    setSelectedCategory("");
+    setProducts([]);
     setLoading(false);
   };
 
-  // ===== Manipular carrinho =====
-  const handleQuantityChange = (product, qty) => {
-    const quantity = parseFloat(qty) || 0;
-    setCart((prev) => {
-      const exists = prev.find((i) => i.id === product.id);
-      if (exists) {
-        return prev.map((i) =>
-          i.id === product.id
-            ? {
-                ...i,
-                quantity,
-                ordered_quantity: quantity,
-                total_cost: quantity * (i.unit_cost || 0),
-              }
-            : i
-        );
-      } else {
-        return [
-          ...prev,
-          {
-            ...product,
-            quantity,
-            ordered_quantity: quantity,
-            unit_cost: product.cost_price || 0,
-            total_cost: quantity * (product.cost_price || 0),
-            ordered_unit: product.unit,
-          },
-        ];
-      }
-    });
-  };
-
-  const removeFromCart = (id) => setCart(cart.filter((p) => p.id !== id));
-
-  // ===== Gerar e enviar PDF =====
   const generateAndUploadPDF = async (order) => {
     const element = pdfRefs.current[order.id];
-    if (!element) return;
+    if (!element) return null;
 
     try {
       const opt = {
@@ -253,21 +437,23 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
         html2canvas: { scale: 2 },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       };
+
       const pdfBlob = await html2pdf().from(element).set(opt).output("blob");
 
       const filePath = `pedidos/pedido_${order.id}.pdf`;
+
       const { error } = await supabase.storage
         .from("documentos")
         .upload(filePath, pdfBlob, {
           contentType: "application/pdf",
           upsert: true,
         });
+
       if (error) throw error;
 
       const { data } = supabase.storage.from("documentos").getPublicUrl(filePath);
       return data.publicUrl;
     } catch (err) {
-      console.error("Erro ao enviar PDF:", err.message);
       toast({
         title: "Erro ao enviar PDF",
         description: err.message,
@@ -279,8 +465,12 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
 
   const sendWhats = async (order) => {
     const phone = order.company?.phone?.replace(/\D/g, "");
+
     if (!phone) {
-      toast({ title: "Telefone não encontrado", variant: "destructive" });
+      toast({
+        title: "Telefone não encontrado",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -303,9 +493,9 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
     );
 
     const msg = encodeURIComponent(
-      `Olá! Segue o pedido de insumos #${order.id} da empresa ${order.company?.name}.\n\n🧾 *Resumo do Pedido:*\n${resumo}${
+      `Olá! Segue o pedido de insumos #${order.id} da empresa ${order.company?.name}.\n\n🧾 Resumo do Pedido:\n${resumo}${
         order.supply_order_items.length > 5 ? ", ..." : ""
-      }\n\n💰 *Total:* ${total?.toLocaleString("pt-BR", {
+      }\n\n💰 Total: ${total?.toLocaleString("pt-BR", {
         style: "currency",
         currency: "BRL",
       })}\n📎 PDF: ${pdfUrl}`
@@ -314,7 +504,6 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
     window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
   };
 
-  // ===== Visualizar PDF =====
   const viewPDF = (order) => {
     const element = pdfRefs.current[order.id];
     if (!element) return;
@@ -329,25 +518,21 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
       })
       .toPdf()
       .get("pdf")
-      .then(function (pdf) {
-        // ===== Numeração automática =====
+      .then((pdf) => {
         const totalPages = pdf.internal.getNumberOfPages();
         const pageWidth = pdf.internal.pageSize.getWidth();
         const pageHeight = pdf.internal.pageSize.getHeight();
+
         pdf.setFontSize(9);
         pdf.setTextColor(80, 80, 80);
 
         for (let i = 1; i <= totalPages; i++) {
           pdf.setPage(i);
-          pdf.text(
-            `Página ${i} de ${totalPages}`,
-            pageWidth / 2,
-            pageHeight - 8,
-            { align: "center" }
-          );
+          pdf.text(`Página ${i} de ${totalPages}`, pageWidth / 2, pageHeight - 8, {
+            align: "center",
+          });
         }
 
-        // ===== Abrir visualização =====
         const blob = pdf.output("blob");
         const url = URL.createObjectURL(blob);
 
@@ -379,9 +564,7 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
                   font-size: 13px;
                   border-radius: 6px;
                   cursor: pointer;
-                  transition: background-color 0.2s ease;
                 }
-                button:hover { background-color: #a00; }
                 iframe {
                   width: 100%;
                   height: 94vh;
@@ -413,7 +596,6 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
         newWindow.document.close();
       })
       .catch((err) => {
-        console.error("Erro ao gerar PDF:", err);
         toast({
           title: "Erro ao gerar PDF",
           description: err.message,
@@ -422,14 +604,14 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
       });
   };
 
-  // ===== Pedidos enviados =====
   const renderEnviados = () => (
-    <div className="bg-card p-6 rounded-xl shadow-sm">
+    <div className="bg-white p-6 rounded-xl shadow-sm">
       <h2 className="text-xl font-bold mb-4">Pedidos Enviados</h2>
+
       {loading ? (
         <p>Carregando...</p>
       ) : sentOrders.length === 0 ? (
-        <p className="text-muted-foreground">Nenhum pedido encontrado.</p>
+        <p className="text-gray-500">Nenhum pedido encontrado.</p>
       ) : (
         sentOrders.map((order) => {
           const config = statusConfig[order.status] || statusConfig.Pendente;
@@ -441,23 +623,27 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
 
           return (
             <div key={order.id} className="border p-4 rounded-lg mb-3">
-              <div className="flex justify-between flex-wrap items-center mb-2">
+              <div className="flex justify-between flex-wrap items-center mb-2 gap-3">
                 <div>
                   <p className="font-bold">Pedido #{order.id}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Empresa: {order.company?.name}
+                  <p className="text-sm text-gray-500">
+                    Empresa: {order.company?.name || "-"}
                   </p>
-                  <p className="text-sm text-muted-foreground">
-                    Solicitante: {order.user?.name}
+                  <p className="text-sm text-gray-500">
+                    Solicitante: {order.user?.name || authEmail || "-"}
                   </p>
-                  <p className="text-sm text-muted-foreground">
-                    Data: {new Date(order.order_date).toLocaleDateString()}
+                  <p className="text-sm text-gray-500">
+                    Data: {order.order_date
+                      ? new Date(order.order_date).toLocaleDateString("pt-BR")
+                      : "-"}
                   </p>
                 </div>
+
                 <span
                   className={`px-3 py-1 rounded-full text-xs font-semibold ${config.bg} ${config.color}`}
                 >
-                  <Icon className="inline w-3 h-3 mr-1" /> {order.status}
+                  <Icon className="inline w-3 h-3 mr-1" />
+                  {order.status}
                 </span>
               </div>
 
@@ -471,15 +657,19 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
 
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => viewPDF(order)}>
-                  <FileText className="w-4 h-4 mr-2" /> Visualizar PDF
+                  <FileText className="w-4 h-4 mr-2" />
+                  Visualizar PDF
                 </Button>
+
                 <Button
                   size="sm"
                   className="bg-green-500 hover:bg-green-600 text-white"
                   onClick={() => sendWhats(order)}
                 >
-                  <MessageSquare className="w-4 h-4 mr-2" /> WhatsApp (PDF)
+                  <MessageSquare className="w-4 h-4 mr-2" />
+                  WhatsApp (PDF)
                 </Button>
+
                 <Button
                   size="sm"
                   variant="destructive"
@@ -488,11 +678,11 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
                     setIsDeleteDialogOpen(true);
                   }}
                 >
-                  <Trash2 className="w-4 h-4 mr-2" /> Remover
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Remover
                 </Button>
               </div>
 
-              {/* PDF oculto */}
               <div className="hidden">
                 <PrintablePedidos
                   ref={(el) => (pdfRefs.current[order.id] = el)}
@@ -506,19 +696,25 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
     </div>
   );
 
-  // ===== Tela de criação =====
   const renderCriar = () => (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2 bg-card p-6 rounded-xl shadow-sm">
+      <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm">
         <h2 className="text-xl font-bold mb-4">1. Selecionar Produtos</h2>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div>
             <label className="text-sm font-medium">Empresa</label>
             <select
               value={selectedCompany}
-              onChange={(e) => setSelectedCompany(e.target.value)}
+              onChange={(e) => {
+                setSelectedCompany(e.target.value);
+                setSelectedCategory("");
+                setProducts([]);
+                setCart([]);
+              }}
               className="w-full mt-1 p-2 border rounded-md"
             >
+              <option value="">Selecione uma empresa</option>
               {allowedCompanies.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -526,6 +722,7 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
               ))}
             </select>
           </div>
+
           <div>
             <label className="text-sm font-medium">Categoria</label>
             <select
@@ -544,48 +741,49 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
         </div>
 
         {loading && <p>Carregando...</p>}
+
         <div className="max-h-96 overflow-y-auto space-y-2">
-          {products.map((p) => (
-            <div
-              key={p.id}
-              className="flex justify-between items-center border-b py-2"
-            >
-              <div>
-                <p className="font-semibold">{p.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {p.unit} —{" "}
-                  {p.cost_price?.toLocaleString("pt-BR", {
-                    style: "currency",
-                    currency: "BRL",
-                  }) || "—"}
-                </p>
+          {products.map((p) => {
+            const cartItem = cart.find((i) => i.id === p.id);
+
+            return (
+              <div
+                key={p.id}
+                className="flex justify-between items-center border-b py-2 gap-4"
+              >
+                <div>
+                  <p className="font-semibold">{p.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {p.unit} —{" "}
+                    {Number(p.cost_price || 0).toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    className="w-20 text-center"
+                    placeholder="Qtd"
+                    value={cartItem?.quantity || ""}
+                    onChange={(e) => handleQuantityChange(p, e.target.value)}
+                  />
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min="0"
-                  className="w-20 text-center"
-                  placeholder="Qtd"
-                  onChange={(e) => handleQuantityChange(p, e.target.value)}
-                />
-                <Button
-                  size="sm"
-                  className="bg-orange-500 hover:bg-orange-600 text-white"
-                  onClick={() => toast({ title: "Produto adicionado!" })}
-                >
-                  Adicionar
-                </Button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
-      <div className="bg-card p-6 rounded-xl shadow-sm flex flex-col">
+      <div className="bg-white p-6 rounded-xl shadow-sm flex flex-col">
         <h2 className="text-xl font-bold mb-4">2. Resumo do Pedido</h2>
+
         <div className="flex-grow overflow-y-auto">
           {cart.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
               <PackageSearch className="w-12 h-12 mb-2" />
               <p>Seu pedido está vazio.</p>
             </div>
@@ -593,25 +791,27 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
             cart.map((item) => (
               <div
                 key={item.id}
-                className="flex justify-between items-center border-b py-1"
+                className="flex justify-between items-center border-b py-1 gap-3"
               >
                 <div>
                   <p className="font-medium">{item.name}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-gray-500">
                     {item.quantity} {item.unit} ×{" "}
-                    {(item.unit_cost || 0).toLocaleString("pt-BR", {
+                    {Number(item.unit_cost || 0).toLocaleString("pt-BR", {
                       style: "currency",
                       currency: "BRL",
                     })}
                   </p>
                 </div>
+
                 <div className="flex items-center gap-2">
                   <p className="font-semibold">
-                    {(item.total_cost || 0).toLocaleString("pt-BR", {
+                    {Number(item.total_cost || 0).toLocaleString("pt-BR", {
                       style: "currency",
                       currency: "BRL",
                     })}
                   </p>
+
                   <Button
                     size="icon"
                     variant="destructive"
@@ -624,16 +824,18 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
             ))
           )}
         </div>
+
         <Input
           type="date"
           value={orderDate}
           onChange={(e) => setOrderDate(e.target.value)}
           className="mt-4"
         />
+
         <Button
           onClick={handleSendOrder}
           className="mt-4"
-          disabled={cart.length === 0 || loading}
+          disabled={cart.length === 0 || loading || !selectedCompany}
         >
           <Send className="w-4 h-4 mr-2" />
           Enviar Pedido
@@ -642,29 +844,47 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
     </div>
   );
 
+  if (bootLoading) {
+    return (
+      <div className="p-6">
+        <p>Carregando módulo de pedidos...</p>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Pedidos</h1>
+          <p className="text-gray-500">
+            Criação e acompanhamento de pedidos de insumos
+          </p>
+        </div>
+
         <div className="flex border-b">
           <button
             onClick={() => setActiveTab("criar")}
             className={`flex items-center gap-2 px-4 py-2 font-semibold rounded-t-lg ${
               activeTab === "criar"
-                ? "text-primary border-b-2 border-primary"
-                : "text-muted-foreground"
+                ? "text-orange-600 border-b-2 border-orange-500"
+                : "text-gray-500"
             }`}
           >
-            <ShoppingCart className="w-5 h-5" /> Criar Pedido
+            <ShoppingCart className="w-5 h-5" />
+            Criar Pedido
           </button>
+
           <button
             onClick={() => setActiveTab("enviados")}
             className={`flex items-center gap-2 px-4 py-2 font-semibold rounded-t-lg ${
               activeTab === "enviados"
-                ? "text-primary border-b-2 border-primary"
-                : "text-muted-foreground"
+                ? "text-orange-600 border-b-2 border-orange-500"
+                : "text-gray-500"
             }`}
           >
-            <List className="w-5 h-5" /> Pedidos Enviados
+            <List className="w-5 h-5" />
+            Pedidos Enviados
           </button>
         </div>
 
@@ -681,7 +901,6 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
         </AnimatePresence>
       </div>
 
-      {/* ===== Confirmação de exclusão ===== */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -690,6 +909,7 @@ const Pedidos = ({ user, companies, userCompanyAccess }) => {
               Essa ação é permanente. Deseja excluir o pedido #{orderToDelete}?
             </AlertDialogDescription>
           </AlertDialogHeader>
+
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction

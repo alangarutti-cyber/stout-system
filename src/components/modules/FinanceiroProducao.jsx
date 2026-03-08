@@ -1,12 +1,7 @@
-import React from "react";
-import FinanceiroProducaoDashboardCard from "@/components/dashboard/FinanceiroProducaoDashboardCard";
-
-const FinanceiroProducao = () => {
+export default function FinanceiroProducao() {
   return (
-    <div className="p-6">
-      <FinanceiroProducaoDashboardCard />
+    <div style={{ padding: 40, background: "red", color: "white", fontSize: 40 }}>
+      TESTE FINANCEIRO PRODUÇÃO
     </div>
   );
-};
-
-export default FinanceiroProducao;
+}
