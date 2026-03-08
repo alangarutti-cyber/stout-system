@@ -18,6 +18,16 @@ import {
   Moon,
   Sun,
   PieChart,
+  Package,
+  Tags,
+  Receipt,
+  ShieldCheck,
+  Boxes,
+  Settings2,
+  Bike,
+  UserCog,
+  Ruler,
+  ScrollText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/customSupabaseClient";
@@ -72,15 +82,33 @@ const MainLayout = () => {
     { id: 7, name: "Bancos", path: "bancos", icon: Banknote, group: "Financeiro" },
     { id: 8, name: "Conferência", path: "conferencia", icon: ClipboardList, group: "Financeiro" },
 
-    { id: 9, name: "Fornecedores", path: "fornecedores", icon: Factory, group: "Cadastros" },
-    { id: 10, name: "Funcionários", path: "funcionarios", icon: Users, group: "Cadastros" },
-    { id: 11, name: "Empresas", path: "empresas", icon: Building2, group: "Cadastros" },
+    { id: 9, name: "Clientes", path: "cadastros/clientes", icon: Users, group: "Cadastros" },
+    { id: 10, name: "Colaboradores", path: "cadastros/colaboradores", icon: Users, group: "Cadastros" },
+    { id: 11, name: "Produtos", path: "cadastros/produtos", icon: Package, group: "Cadastros" },
+    { id: 12, name: "Produtos V2", path: "cadastros/produtos-v2", icon: Package, group: "Cadastros" },
+    { id: 13, name: "Empresas", path: "cadastros/empresas", icon: Building2, group: "Cadastros" },
+    { id: 14, name: "Categorias", path: "cadastros/categorias-produtos", icon: Tags, group: "Cadastros" },
+    { id: 15, name: "Certificados", path: "cadastros/certificados", icon: ShieldCheck, group: "Cadastros" },
+    { id: 16, name: "Despesas", path: "cadastros/despesas", icon: Receipt, group: "Cadastros" },
+    { id: 17, name: "DRE Groups", path: "cadastros/dre-groups", icon: ScrollText, group: "Cadastros" },
+    { id: 18, name: "DRE Mappings", path: "cadastros/dre-mappings", icon: ScrollText, group: "Cadastros" },
+    { id: 19, name: "Formas Pagamento", path: "cadastros/formas-pagamento", icon: CreditCard, group: "Cadastros" },
+    { id: 20, name: "Grupos Custo DRE", path: "cadastros/grupos-custo-dre", icon: Boxes, group: "Cadastros" },
+    { id: 21, name: "Locais Impressão", path: "cadastros/locais-impressao", icon: Receipt, group: "Cadastros" },
+    { id: 22, name: "Módulos Sistema", path: "cadastros/modulos-sistema", icon: Settings2, group: "Cadastros" },
+    { id: 23, name: "Operadoras Cartão", path: "cadastros/operadoras-cartao", icon: CreditCard, group: "Cadastros" },
+    { id: 24, name: "Pagamento Freelance", path: "cadastros/pagamento-freelance", icon: Wallet, group: "Cadastros" },
+    { id: 25, name: "Pagamento Motoboy", path: "cadastros/pagamento-motoboy", icon: Bike, group: "Cadastros" },
+    { id: 26, name: "Permissões", path: "cadastros/permissoes", icon: ShieldCheck, group: "Cadastros" },
+    { id: 27, name: "Unidades Medida", path: "cadastros/unidades-medida", icon: Ruler, group: "Cadastros" },
+    { id: 28, name: "Usuários", path: "cadastros/usuarios", icon: UserCog, group: "Cadastros" },
 
-    { id: 12, name: "Caixa", path: "caixa", icon: CircleDollarSign, group: "Operacional" },
-    { id: 13, name: "Pedidos", path: "pedidos", icon: ShoppingCart, group: "Operacional" },
+    { id: 29, name: "Fornecedores", path: "fornecedores", icon: Factory, group: "Operacional" },
+    { id: 30, name: "Caixa", path: "caixa", icon: CircleDollarSign, group: "Operacional" },
+    { id: 31, name: "Pedidos", path: "pedidos", icon: ShoppingCart, group: "Operacional" },
 
-    { id: 14, name: "Configurações", path: "configuracoes", icon: Settings, group: "Configurações" },
-    { id: 15, name: "Relatórios", path: "relatorios", icon: FileText, group: "Análises" },
+    { id: 32, name: "Configurações", path: "configuracoes", icon: Settings, group: "Configurações" },
+    { id: 33, name: "Relatórios", path: "relatorios", icon: FileText, group: "Análises" },
   ];
 
   const groupedModules = hardcodedModules.reduce((acc, m) => {
@@ -139,9 +167,7 @@ const MainLayout = () => {
         </nav>
 
         <footer className="border-t border-border p-4 text-center text-sm space-y-3">
-          <p className="text-muted-foreground">
-            Olá, {userLabel}
-          </p>
+          <p className="text-muted-foreground">Olá, {userLabel}</p>
 
           <Button
             variant="outline"

@@ -5,7 +5,6 @@ import {
   HeartPulse,
   BarChart3,
   Wallet,
-  CreditCard,
   FileText,
   Landmark,
   ClipboardCheck,
@@ -13,8 +12,17 @@ import {
   Users,
   Building2,
   Calculator,
-  Moon,
-  LogOut,
+  Package,
+  Tags,
+  Receipt,
+  ShieldCheck,
+  Boxes,
+  Settings2,
+  CreditCard,
+  Bike,
+  UserCog,
+  Ruler,
+  ScrollText,
 } from "lucide-react";
 
 const menuSections = [
@@ -30,7 +38,6 @@ const menuSections = [
     title: "FINANCEIRO",
     items: [
       { label: "Financeiro", to: "/financeiro", icon: Wallet },
-      { label: "Financeiro Produção", to: "/financeiro-producao", icon: CreditCard },
       { label: "DRE", to: "/dre", icon: FileText },
       { label: "Bancos", to: "/bancos", icon: Landmark },
       { label: "Conferência", to: "/conferencia", icon: ClipboardCheck },
@@ -39,22 +46,43 @@ const menuSections = [
   {
     title: "CADASTROS",
     items: [
-      { label: "Fornecedores", to: "/fornecedores", icon: Truck },
-      { label: "Funcionários", to: "/funcionarios", icon: Users },
-      { label: "Empresas", to: "/empresas", icon: Building2 },
+      { label: "Clientes", to: "/cadastros/clientes", icon: Users },
+      { label: "Colaboradores", to: "/cadastros/colaboradores", icon: Users },
+      { label: "Produtos", to: "/cadastros/produtos", icon: Package },
+      { label: "Produtos V2", to: "/cadastros/produtos-v2", icon: Package },
+      { label: "Empresas", to: "/cadastros/empresas", icon: Building2 },
+      { label: "Categorias", to: "/cadastros/categorias-produtos", icon: Tags },
+      { label: "Certificados", to: "/cadastros/certificados", icon: ShieldCheck },
+      { label: "Despesas", to: "/cadastros/despesas", icon: Receipt },
+      { label: "DRE Groups", to: "/cadastros/dre-groups", icon: ScrollText },
+      { label: "DRE Mappings", to: "/cadastros/dre-mappings", icon: ScrollText },
+      { label: "Formas Pagamento", to: "/cadastros/formas-pagamento", icon: CreditCard },
+      { label: "Grupos Custo DRE", to: "/cadastros/grupos-custo-dre", icon: Boxes },
+      { label: "Locais Impressão", to: "/cadastros/locais-impressao", icon: Receipt },
+      { label: "Módulos Sistema", to: "/cadastros/modulos-sistema", icon: Settings2 },
+      { label: "Operadoras Cartão", to: "/cadastros/operadoras-cartao", icon: CreditCard },
+      { label: "Pagamento Freelance", to: "/cadastros/pagamento-freelance", icon: Wallet },
+      { label: "Pagamento Motoboy", to: "/cadastros/pagamento-motoboy", icon: Bike },
+      { label: "Permissões", to: "/cadastros/permissoes", icon: ShieldCheck },
+      { label: "Unidades Medida", to: "/cadastros/unidades-medida", icon: Ruler },
+      { label: "Usuários", to: "/cadastros/usuarios", icon: UserCog },
     ],
   },
   {
     title: "OPERACIONAL",
-    items: [{ label: "Caixa", to: "/caixa", icon: Calculator }],
+    items: [
+      { label: "Caixa", to: "/caixa", icon: Calculator },
+      { label: "Pedidos", to: "/pedidos", icon: Package },
+      { label: "Fornecedores", to: "/fornecedores", icon: Truck },
+    ],
   },
 ];
 
 const Sidebar = () => {
   return (
-    <aside className="w-[248px] min-h-screen bg-white border-r border-gray-200 flex flex-col">
+    <aside className="w-[260px] min-h-screen bg-white border-r border-gray-200 flex flex-col">
       <div className="h-16 flex items-center px-4 border-b border-gray-200">
-        <span className="text-[16px] font-bold text-[#ff6600]">Stout System</span>
+        <span className="text-[18px] font-bold text-[#ff6600]">Stout System</span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
@@ -74,14 +102,14 @@ const Sidebar = () => {
                     to={item.to}
                     className={({ isActive }) =>
                       [
-                        "flex items-center gap-3 px-3 py-3 rounded-xl text-[15px] font-medium transition-all",
+                        "flex items-center gap-3 px-3 py-2.5 rounded-xl text-[14px] font-medium transition-all",
                         isActive
                           ? "bg-[#ff6600] text-white shadow-sm"
                           : "text-[#ff6600] hover:bg-orange-50",
                       ].join(" ")
                     }
                   >
-                    <Icon size={18} />
+                    <Icon size={17} />
                     <span>{item.label}</span>
                   </NavLink>
                 );
@@ -89,20 +117,6 @@ const Sidebar = () => {
             </div>
           </div>
         ))}
-      </div>
-
-      <div className="border-t border-gray-200 p-4 space-y-3">
-        <p className="text-sm text-gray-700">Olá, usuário</p>
-
-        <button className="w-full flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-medium text-gray-800 hover:bg-gray-50 transition">
-          <Moon size={16} />
-          Modo Escuro
-        </button>
-
-        <button className="w-full flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-sm font-medium text-gray-800 hover:bg-gray-50 transition">
-          <LogOut size={16} />
-          Sair
-        </button>
       </div>
     </aside>
   );

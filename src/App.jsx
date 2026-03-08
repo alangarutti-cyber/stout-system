@@ -19,6 +19,22 @@ import Clientes from "@/components/modules/cadastros/Clientes";
 import Colaboradores from "@/components/modules/cadastros/Colaboradores";
 import Produtos from "@/components/modules/cadastros/Produtos";
 import Empresas from "@/components/modules/cadastros/Empresas";
+import CategoriasProdutos from "@/components/modules/cadastros/CategoriasProdutos";
+import Certificados from "@/components/modules/cadastros/Certificados";
+import Despesas from "@/components/modules/cadastros/Despesas";
+import DreGroups from "@/components/modules/cadastros/DreGroups";
+import DreMappings from "@/components/modules/cadastros/DreMappings";
+import FormasPagamento from "@/components/modules/cadastros/FormasPagamento";
+import GruposCustoDRE from "@/components/modules/cadastros/GruposCustoDRE";
+import LocaisImpressao from "@/components/modules/cadastros/LocaisImpressao";
+import ModulosSistema from "@/components/modules/cadastros/ModulosSistema";
+import OperadorasCartao from "@/components/modules/cadastros/OperadorasCartao";
+import PagamentoFreelance from "@/components/modules/cadastros/PagamentoFreelance";
+import PagamentoMotoboy from "@/components/modules/cadastros/PagamentoMotoboy";
+import Permissoes from "@/components/modules/cadastros/Permissoes";
+import ProdutosV2 from "@/components/modules/cadastros/ProdutosV2";
+import UnidadesMedida from "@/components/modules/cadastros/UnidadesMedida";
+import Usuarios from "@/components/modules/cadastros/Usuarios";
 
 import Financeiro from "@/components/financeiro/Financeiro";
 import CashClosingModern from "@/components/modules/CashClosingModern";
@@ -60,7 +76,6 @@ const App = () => {
             </ProtectedRoute>
           }
         >
-          {/* REDIRECT */}
           <Route index element={<Navigate to="/dashboard" replace />} />
 
           {/* PRINCIPAL */}
@@ -81,7 +96,23 @@ const App = () => {
           <Route path="cadastros/clientes" element={<Clientes />} />
           <Route path="cadastros/colaboradores" element={<Colaboradores />} />
           <Route path="cadastros/produtos" element={<Produtos />} />
+          <Route path="cadastros/produtos-v2" element={<ProdutosV2 />} />
           <Route path="cadastros/empresas" element={<Empresas />} />
+          <Route path="cadastros/categorias-produtos" element={<CategoriasProdutos />} />
+          <Route path="cadastros/certificados" element={<Certificados />} />
+          <Route path="cadastros/despesas" element={<Despesas />} />
+          <Route path="cadastros/dre-groups" element={<DreGroups />} />
+          <Route path="cadastros/dre-mappings" element={<DreMappings />} />
+          <Route path="cadastros/formas-pagamento" element={<FormasPagamento />} />
+          <Route path="cadastros/grupos-custo-dre" element={<GruposCustoDRE />} />
+          <Route path="cadastros/locais-impressao" element={<LocaisImpressao />} />
+          <Route path="cadastros/modulos-sistema" element={<ModulosSistema />} />
+          <Route path="cadastros/operadoras-cartao" element={<OperadorasCartao />} />
+          <Route path="cadastros/pagamento-freelance" element={<PagamentoFreelance />} />
+          <Route path="cadastros/pagamento-motoboy" element={<PagamentoMotoboy />} />
+          <Route path="cadastros/permissoes" element={<Permissoes />} />
+          <Route path="cadastros/unidades-medida" element={<UnidadesMedida />} />
+          <Route path="cadastros/usuarios" element={<Usuarios />} />
 
           {/* SISTEMA */}
           <Route path="configuracoes" element={<Configuracoes />} />
