@@ -29,6 +29,60 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+const EMPTY_FORM = {
+  name: "",
+  is_active: true,
+  category_id: null,
+  unit: "UN",
+  cost_price: "",
+  sale_price: "",
+  sale_price_1: "",
+  sale_price_2: "",
+  sale_price_3: "",
+  active_price: 1,
+  custom_code: "",
+  description: "",
+  image_url: "",
+  min_stock: "",
+  current_stock: "",
+  storage_location: "",
+  recipe_cost: 0,
+  show_in_pdv: true,
+  input_unit: "",
+  conversion_factor: "",
+  company_id: null,
+};
+
+const normalizeNumber = (value) => {
+  if (value === null || value === undefined || value === "") return "";
+  return String(value);
+};
+
+const parseNumeric = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const num = parseFloat(String(value).replace(",", "."));
+  return Number.isNaN(num) ? null : num;
+};
+
+const buildFormDataFromProduct = (product) => {
+  const primarySalePrice =
+    product?.sale_price_1 ?? product?.sale_price ?? "";
+
+  return {
+    ...EMPTY_FORM,
+    ...product,
+    sale_price: normalizeNumber(primarySalePrice),
+    sale_price_1: normalizeNumber(primarySalePrice),
+    sale_price_2: normalizeNumber(product?.sale_price_2),
+    sale_price_3: normalizeNumber(product?.sale_price_3),
+    cost_price: normalizeNumber(product?.cost_price),
+    min_stock: normalizeNumber(product?.min_stock),
+    current_stock: normalizeNumber(product?.current_stock),
+    recipe_cost: normalizeNumber(product?.recipe_cost ?? 0),
+    conversion_factor: normalizeNumber(product?.conversion_factor),
+  };
+};
+
 const ProductForm = ({
   product,
   onSaveSuccess,
@@ -38,59 +92,22 @@ const ProductForm = ({
 }) => {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("geral");
-  const [formData, setFormData] = useState({
-    name: "",
-    is_active: true,
-    category_id: null,
-    unit: "UN",
-    cost_price: "",
-    sale_price: "",
-    sale_price_2: "",
-    sale_price_3: "",
-    custom_code: "",
-    description: "",
-    image_url: "",
-    min_stock: "",
-    current_stock: "",
-    storage_location: "",
-    recipe_cost: 0,
-    show_in_pdv: true,
-    input_unit: "",
-    conversion_factor: "",
-  });
+  const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState(EMPTY_FORM);
   const [selectedCompanies, setSelectedCompanies] = useState(new Set());
 
   useEffect(() => {
     if (product) {
-      setFormData({
-        ...product,
-        sale_price_2: product.sale_price_2 || "",
-        sale_price_3: product.sale_price_3 || "",
-      });
+      setFormData(buildFormDataFromProduct(product));
       setSelectedCompanies(new Set(product.company_access || []));
-    } else {
-      setFormData({
-        name: "",
-        is_active: true,
-        category_id: null,
-        unit: "UN",
-        cost_price: "",
-        sale_price: "",
-        sale_price_2: "",
-        sale_price_3: "",
-        custom_code: "",
-        description: "",
-        image_url: "",
-        min_stock: "",
-        current_stock: "",
-        storage_location: "",
-        recipe_cost: 0,
-        show_in_pdv: true,
-        input_unit: "",
-        conversion_factor: "",
-      });
-      setSelectedCompanies(new Set((companies || []).map((c) => c.id)));
+      return;
     }
+
+    setFormData({
+      ...EMPTY_FORM,
+      company_id: companies?.[0]?.id ?? null,
+    });
+    setSelectedCompanies(new Set((companies || []).map((c) => c.id)));
   }, [product, companies]);
 
   const handleInputChange = (field, value) => {
@@ -110,7 +127,7 @@ const ProductForm = ({
   };
 
   const handleSave = async () => {
-    if (!formData.name || selectedCompanies.size === 0) {
+    if (!formData.name?.trim() || selectedCompanies.size === 0) {
       toast({
         title: "Campos obrigatórios",
         description: "Nome e ao menos uma empresa são obrigatórios.",
@@ -119,89 +136,105 @@ const ProductForm = ({
       return;
     }
 
-    const parseNumeric = (value) => {
-      if (value === null || value === "") return null;
-      const num = parseFloat(String(value).replace(",", "."));
-      return Number.isNaN(num) ? null : num;
-    };
+    setSaving(true);
 
-    const dataToSave = { ...formData };
+    try {
+      const selectedCompanyIds = Array.from(selectedCompanies);
+      const ownerCompanyId =
+        formData.company_id || selectedCompanyIds[0] || null;
 
-    [
-      "cost_price",
-      "sale_price",
-      "sale_price_2",
-      "sale_price_3",
-      "min_stock",
-      "current_stock",
-      "recipe_cost",
-      "conversion_factor",
-    ].forEach((key) => {
-      dataToSave[key] = parseNumeric(dataToSave[key]);
-    });
+      const primarySalePrice = parseNumeric(formData.sale_price);
 
-    if (!dataToSave.category_id) dataToSave.category_id = null;
+      const dataToSave = {
+        name: formData.name?.trim(),
+        is_active: !!formData.is_active,
+        category_id: formData.category_id ? Number(formData.category_id) : null,
+        unit: formData.unit || "UN",
+        cost_price: parseNumeric(formData.cost_price),
+        sale_price: primarySalePrice,
+        sale_price_1: primarySalePrice,
+        sale_price_2: parseNumeric(formData.sale_price_2),
+        sale_price_3: parseNumeric(formData.sale_price_3),
+        active_price: formData.active_price ? Number(formData.active_price) : 1,
+        custom_code: formData.custom_code || "",
+        description: formData.description || "",
+        image_url: formData.image_url || "",
+        min_stock: parseNumeric(formData.min_stock),
+        current_stock: parseNumeric(formData.current_stock),
+        storage_location: formData.storage_location || "",
+        recipe_cost: parseNumeric(formData.recipe_cost) ?? 0,
+        show_in_pdv: !!formData.show_in_pdv,
+        input_unit: formData.input_unit || null,
+        conversion_factor: parseNumeric(formData.conversion_factor),
+        company_id: ownerCompanyId,
+      };
 
-    delete dataToSave.id;
-    delete dataToSave.created_at;
-    delete dataToSave.product_categories;
-    delete dataToSave.product_company_access;
-    delete dataToSave.company_access;
+      let savedProduct;
+      let saveError;
 
-    const query = product
-      ? supabase.from("products").update(dataToSave).eq("id", product.id)
-      : supabase.from("products").insert(dataToSave);
+      if (product?.id) {
+        const response = await supabase
+          .from("products")
+          .update(dataToSave)
+          .eq("id", product.id)
+          .select("*")
+          .single();
 
-    const { data: savedProduct, error } = await query.select().single();
+        savedProduct = response.data;
+        saveError = response.error;
+      } else {
+        const response = await supabase
+          .from("products")
+          .insert(dataToSave)
+          .select("*")
+          .single();
 
-    if (error) {
+        savedProduct = response.data;
+        saveError = response.error;
+      }
+
+      if (saveError) {
+        throw saveError;
+      }
+
+      const { error: deleteAccessError } = await supabase
+        .from("product_company_access")
+        .delete()
+        .eq("product_id", savedProduct.id);
+
+      if (deleteAccessError) {
+        throw deleteAccessError;
+      }
+
+      const accessData = selectedCompanyIds.map((company_id) => ({
+        product_id: savedProduct.id,
+        company_id,
+      }));
+
+      if (accessData.length > 0) {
+        const { error: accessError } = await supabase
+          .from("product_company_access")
+          .insert(accessData);
+
+        if (accessError) {
+          throw accessError;
+        }
+      }
+
+      toast({
+        title: `Produto ${product ? "atualizado" : "criado"} com sucesso!`,
+      });
+
+      onSaveSuccess();
+    } catch (error) {
       toast({
         title: "Erro ao salvar produto",
-        description: error.message,
+        description: error?.message || "Erro desconhecido ao salvar produto.",
         variant: "destructive",
       });
-      return;
+    } finally {
+      setSaving(false);
     }
-
-    const { error: deleteAccessError } = await supabase
-      .from("product_company_access")
-      .delete()
-      .eq("product_id", savedProduct.id);
-
-    if (deleteAccessError) {
-      toast({
-        title: "Erro ao atualizar acessos",
-        description: deleteAccessError.message,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const accessData = Array.from(selectedCompanies).map((company_id) => ({
-      product_id: savedProduct.id,
-      company_id,
-    }));
-
-    if (accessData.length > 0) {
-      const { error: accessError } = await supabase
-        .from("product_company_access")
-        .insert(accessData);
-
-      if (accessError) {
-        toast({
-          title: "Erro ao salvar acesso por empresa",
-          description: accessError.message,
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-
-    toast({
-      title: `Produto ${product ? "atualizado" : "criado"} com sucesso!`,
-    });
-
-    onSaveSuccess();
   };
 
   return (
@@ -314,7 +347,7 @@ const ProductForm = ({
                     id="cost_price"
                     type="number"
                     step="0.01"
-                    value={formData.cost_price || ""}
+                    value={formData.cost_price}
                     onChange={(e) => handleInputChange("cost_price", e.target.value)}
                   />
                 </div>
@@ -327,7 +360,7 @@ const ProductForm = ({
                     id="sale_price"
                     type="number"
                     step="0.01"
-                    value={formData.sale_price || ""}
+                    value={formData.sale_price}
                     onChange={(e) => handleInputChange("sale_price", e.target.value)}
                   />
                 </div>
@@ -338,7 +371,7 @@ const ProductForm = ({
                     id="sale_price_2"
                     type="number"
                     step="0.01"
-                    value={formData.sale_price_2 || ""}
+                    value={formData.sale_price_2}
                     onChange={(e) => handleInputChange("sale_price_2", e.target.value)}
                   />
                 </div>
@@ -349,7 +382,7 @@ const ProductForm = ({
                     id="sale_price_3"
                     type="number"
                     step="0.01"
-                    value={formData.sale_price_3 || ""}
+                    value={formData.sale_price_3}
                     onChange={(e) => handleInputChange("sale_price_3", e.target.value)}
                   />
                 </div>
@@ -384,7 +417,7 @@ const ProductForm = ({
                     id="min_stock"
                     type="number"
                     step="0.01"
-                    value={formData.min_stock || ""}
+                    value={formData.min_stock}
                     onChange={(e) => handleInputChange("min_stock", e.target.value)}
                   />
                 </div>
@@ -395,7 +428,7 @@ const ProductForm = ({
                     id="current_stock"
                     type="number"
                     step="0.01"
-                    value={formData.current_stock || ""}
+                    value={formData.current_stock}
                     onChange={(e) =>
                       handleInputChange("current_stock", e.target.value)
                     }
@@ -422,101 +455,106 @@ const ProductForm = ({
 
       <DialogFooter className="mt-4 shrink-0">
         <DialogClose asChild>
-          <Button type="button" variant="outline" onClick={onCancel}>
+          <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
             Cancelar
           </Button>
         </DialogClose>
 
-        <Button onClick={handleSave}>
+        <Button onClick={handleSave} disabled={saving}>
           <Save className="mr-2 h-4 w-4" />
-          Salvar
+          {saving ? "Salvando..." : "Salvar"}
         </Button>
       </DialogFooter>
     </DialogContent>
   );
 };
 
-const ProductCard = ({ product, onEdit }) => (
-  <motion.div
-    layout
-    initial={{ opacity: 0, scale: 0.8 }}
-    animate={{ opacity: 1, scale: 1 }}
-    exit={{ opacity: 0, scale: 0.8 }}
-    transition={{ type: "spring", stiffness: 260, damping: 20 }}
-    className="rounded-xl overflow-hidden shadow-lg bg-card border border-border group relative"
-  >
-    <div className="h-40 bg-muted flex items-center justify-center">
-      {product.image_url ? (
-        <img
-          src={product.image_url}
-          alt={product.name}
-          className="w-full h-full object-cover"
-        />
-      ) : (
-        <ImageIcon className="w-12 h-12 text-muted-foreground" />
-      )}
-    </div>
+const ProductCard = ({ product, onEdit }) => {
+  const primarySalePrice =
+    product.sale_price_1 ?? product.sale_price ?? 0;
 
-    <div className="p-4">
-      <h3 className="font-bold text-lg truncate" title={product.name}>
-        {product.name}
-      </h3>
-      <p className="text-sm text-muted-foreground">
-        {product.product_categories?.name || "Sem Categoria"}
-      </p>
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.8 }}
+      transition={{ type: "spring", stiffness: 260, damping: 20 }}
+      className="rounded-xl overflow-hidden shadow-lg bg-card border border-border group relative"
+    >
+      <div className="h-40 bg-muted flex items-center justify-center">
+        {product.image_url ? (
+          <img
+            src={product.image_url}
+            alt={product.name}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <ImageIcon className="w-12 h-12 text-muted-foreground" />
+        )}
+      </div>
 
-      <div className="flex justify-between items-center mt-3">
-        <div className="text-sm">
-          <p className="text-red-500">
-            C: R$ {parseFloat(product.cost_price || 0).toFixed(2)}
-          </p>
-          <p className="text-green-500 font-semibold">
-            V1: R$ {parseFloat(product.sale_price || 0).toFixed(2)}
-          </p>
-          {product.sale_price_2 && (
-            <p className="text-blue-500 font-semibold">
-              V2: R$ {parseFloat(product.sale_price_2).toFixed(2)}
+      <div className="p-4">
+        <h3 className="font-bold text-lg truncate" title={product.name}>
+          {product.name}
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          {product.category_name || "Sem Categoria"}
+        </p>
+
+        <div className="flex justify-between items-center mt-3">
+          <div className="text-sm">
+            <p className="text-red-500">
+              C: R$ {parseFloat(product.cost_price || 0).toFixed(2)}
             </p>
-          )}
-          {product.sale_price_3 && (
-            <p className="text-purple-500 font-semibold">
-              V3: R$ {parseFloat(product.sale_price_3).toFixed(2)}
+            <p className="text-green-500 font-semibold">
+              V1: R$ {parseFloat(primarySalePrice || 0).toFixed(2)}
             </p>
-          )}
-        </div>
+            {!!product.sale_price_2 && (
+              <p className="text-blue-500 font-semibold">
+                V2: R$ {parseFloat(product.sale_price_2).toFixed(2)}
+              </p>
+            )}
+            {!!product.sale_price_3 && (
+              <p className="text-purple-500 font-semibold">
+                V3: R$ {parseFloat(product.sale_price_3).toFixed(2)}
+              </p>
+            )}
+          </div>
 
-        <div className="text-right">
-          <p className="text-sm text-muted-foreground">Estoque</p>
-          <p className="font-bold text-lg">
-            {parseFloat(product.current_stock || 0)}
-            <span className="text-xs ml-1">{product.unit}</span>
-          </p>
+          <div className="text-right">
+            <p className="text-sm text-muted-foreground">Estoque</p>
+            <p className="font-bold text-lg">
+              {parseFloat(product.current_stock || 0)}
+              <span className="text-xs ml-1">{product.unit}</span>
+            </p>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-      <Button
-        size="icon"
-        variant="secondary"
-        className="h-8 w-8"
-        onClick={() => onEdit(product)}
+      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button
+          size="icon"
+          variant="secondary"
+          className="h-8 w-8"
+          onClick={() => onEdit(product)}
+        >
+          <Edit className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <div
+        className={`absolute top-2 left-2 px-2 py-1 text-xs rounded-full ${
+          product.is_active
+            ? "bg-green-100 text-green-800"
+            : "bg-red-100 text-red-800"
+        }`}
       >
-        <Edit className="h-4 w-4" />
-      </Button>
-    </div>
-
-    <div
-      className={`absolute top-2 left-2 px-2 py-1 text-xs rounded-full ${
-        product.is_active
-          ? "bg-green-100 text-green-800"
-          : "bg-red-100 text-red-800"
-      }`}
-    >
-      {product.is_active ? "Ativo" : "Inativo"}
-    </div>
-  </motion.div>
-);
+        {product.is_active ? "Ativo" : "Inativo"}
+      </div>
+    </motion.div>
+  );
+};
 
 const ProdutosV2Tab = () => {
   const { toast } = useToast();
@@ -534,45 +572,60 @@ const ProdutosV2Tab = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
 
-    const { data: productsData, error: productsError } = await supabase
-      .from("products")
-      .select("*, product_categories(name), company_access:product_company_access(company_id)");
+    try {
+      const [
+        productsResponse,
+        categoriesResponse,
+        companiesResponse,
+        accessResponse,
+      ] = await Promise.all([
+        supabase.from("products").select("*").order("name", { ascending: true }),
+        supabase
+          .from("product_categories")
+          .select("id, name, show_in_pdv, created_at")
+          .order("name", { ascending: true }),
+        supabase.from("companies").select("id, name").order("name", { ascending: true }),
+        supabase.from("product_company_access").select("product_id, company_id"),
+      ]);
 
-    const { data: categoriesData, error: categoriesError } = await supabase
-      .from("product_categories")
-      .select("*")
-      .order("name", { ascending: true });
+      if (productsResponse.error) throw productsResponse.error;
+      if (categoriesResponse.error) throw categoriesResponse.error;
+      if (companiesResponse.error) throw companiesResponse.error;
+      if (accessResponse.error) throw accessResponse.error;
 
-    const { data: companiesData, error: companiesError } = await supabase
-      .from("companies")
-      .select("id, name")
-      .order("name", { ascending: true });
+      const categoriesMap = new Map(
+        (categoriesResponse.data || []).map((category) => [category.id, category.name])
+      );
 
-    if (productsError || categoriesError || companiesError) {
+      const accessMap = new Map();
+      (accessResponse.data || []).forEach((row) => {
+        if (!accessMap.has(row.product_id)) {
+          accessMap.set(row.product_id, []);
+        }
+        accessMap.get(row.product_id).push(row.company_id);
+      });
+
+      const mergedProducts = (productsResponse.data || []).map((product) => ({
+        ...product,
+        category_name: categoriesMap.get(product.category_id) || null,
+        company_access: accessMap.get(product.id) || [],
+      }));
+
+      setProducts(mergedProducts);
+      setCategories(categoriesResponse.data || []);
+      setCompanies(companiesResponse.data || []);
+    } catch (error) {
       toast({
         title: "Erro ao buscar dados",
-        description:
-          productsError?.message ||
-          categoriesError?.message ||
-          companiesError?.message ||
-          "Erro desconhecido",
+        description: error?.message || "Erro desconhecido ao carregar produtos.",
         variant: "destructive",
       });
       setProducts([]);
       setCategories([]);
       setCompanies([]);
-    } else {
-      setProducts(
-        (productsData || []).map((p) => ({
-          ...p,
-          company_access: (p.company_access || []).map((ca) => ca.company_id),
-        }))
-      );
-      setCategories(categoriesData || []);
-      setCompanies(companiesData || []);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }, [toast]);
 
   useEffect(() => {
@@ -586,7 +639,7 @@ const ProdutosV2Tab = () => {
         p.name?.toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchesCategory =
-        categoryFilter === "" || String(p.category_id) === categoryFilter;
+        categoryFilter === "" || String(p.category_id) === String(categoryFilter);
 
       return matchesSearch && matchesCategory;
     });
@@ -600,6 +653,13 @@ const ProdutosV2Tab = () => {
   const handleCloseForm = () => {
     setEditingProduct(null);
     setIsFormOpen(false);
+  };
+
+  const handleDialogChange = (open) => {
+    setIsFormOpen(open);
+    if (!open) {
+      setEditingProduct(null);
+    }
   };
 
   return (
@@ -671,7 +731,7 @@ const ProdutosV2Tab = () => {
         </div>
       )}
 
-      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+      <Dialog open={isFormOpen} onOpenChange={handleDialogChange}>
         {isFormOpen && (
           <ProductForm
             product={editingProduct}
